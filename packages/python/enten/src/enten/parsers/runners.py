@@ -20,6 +20,7 @@ from enten.parsers import (
 from enten.parsers.models import (
     GitleaksResult,
     PytestResult,
+    PytestSummary,
     SemgrepResult,
     VitestResult,
 )
@@ -72,11 +73,31 @@ async def _cat_file(handle: SandboxHandle, path: str) -> str:
 
 
 async def run_pytest(
-    sandbox: SandboxProvider, repo_path: str, target: str = "."
+    sandbox: SandboxProvider,
+    repo_path: str,
+    target: str = ".",
+    *,
+    collect_only: bool = False,
 ) -> PytestResult:
-    """Run ``pytest --json-report`` in a sandbox and parse the report."""
+    """Run pytest in a sandbox and parse the report.
+
+    When ``collect_only`` is ``True``, pytest is invoked with
+    ``--collect-only`` and a synthetic :class:`PytestResult` is returned
+    with only the exit code populated. This is used by the test generator
+    to validate generated tests without executing them.
+    """
     handle = await sandbox.create(_repo_files(repo_path))
     try:
+        if collect_only:
+            result = await handle.run(
+                ["pytest", "--collect-only", "-q", target],
+                timeout_seconds=120,
+            )
+            return PytestResult(
+                exit_code=result.exit_code,
+                summary=PytestSummary(),
+                tests=[],
+            )
         _ = await handle.run(
             ["pytest", "--json-report", "--json-report-file=/tmp/pytest-report.json", target],
             timeout_seconds=120,
