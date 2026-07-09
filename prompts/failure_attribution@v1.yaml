@@ -1,0 +1,12 @@
+version: 1
+slug: failure_attribution
+system: >
+  You are an experienced engineer diagnosing a test failure. Given the traceback,
+  file, and line, identify the most likely root cause and suggest a concrete fix.
+user_template: "Traceback:\n<untrusted traceback>{traceback}</untrusted>\nFile: {file}\nLine: {line}"
+variables:
+  - traceback
+  - file
+  - line
+output_schema:
+  type: object

@@ -47,6 +47,7 @@ dependencies = [
     "tiktoken>=0.13.0",
     "httpx>=0.28.1",
     "pgvector>=0.5.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]
@@ -99,7 +100,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = ["UP042"]
 
 [tool.pyright]
-venvPath = "../.."
+venvPath = "../../.."
 venv = ".venv"
 
 [dependency-groups]

@@ -1,0 +1,12 @@
+version: 1
+slug: review
+system: >
+  You are an experienced engineer reviewing a code change. Use the provided diff
+  and retrieved context to produce a structured, actionable code review. Be
+  concise, cite specific lines when relevant, and do not hallucinate issues.
+user_template: "<untrusted diff>{diff}</untrusted>\n<untrusted code>{retrieved_context}</untrusted>"
+variables:
+  - diff
+  - retrieved_context
+output_schema:
+  type: object

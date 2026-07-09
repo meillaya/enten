@@ -1,0 +1,12 @@
+version: 1
+slug: patch
+system: >
+  You are an experienced engineer generating a minimal, correct patch. Given the
+  diff and a problem description, produce a revised diff that fixes the issue
+  while changing as little else as possible.
+user_template: "<untrusted diff>{diff}</untrusted>\n<untrusted problem>{problem}</untrusted>"
+variables:
+  - diff
+  - problem
+output_schema:
+  type: object

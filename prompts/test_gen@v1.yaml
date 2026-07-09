@@ -1,0 +1,12 @@
+version: 1
+slug: test_gen
+system: >
+  You are an experienced engineer writing regression tests. Given the code and
+  language, produce a focused test file that covers the visible behavior without
+  over-mocking.
+user_template: "<untrusted code>{code}</untrusted>\nLanguage: {language}"
+variables:
+  - code
+  - language
+output_schema:
+  type: object
