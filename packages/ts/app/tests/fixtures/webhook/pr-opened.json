@@ -1,0 +1,112 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "url": "https://api.github.com/repos/octocat/hello-world/pulls/42",
+    "id": 123456789,
+    "node_id": "MDExOlB1bGxSZXF1ZXN0MQ==",
+    "html_url": "https://github.com/octocat/hello-world/pull/42",
+    "diff_url": "https://github.com/octocat/hello-world/pull/42.diff",
+    "patch_url": "https://github.com/octocat/hello-world/pull/42.patch",
+    "issue_url": "https://api.github.com/repos/octocat/hello-world/issues/42",
+    "number": 42,
+    "state": "open",
+    "locked": false,
+    "title": "Add enten webhook receiver",
+    "user": {
+      "login": "octocat",
+      "id": 1,
+      "node_id": "MDQ6VXNlcjE=",
+      "avatar_url": "https://github.com/images/error/octocat_happy.gif",
+      "type": "User"
+    },
+    "body": "This PR implements the GitHub App webhook receiver.",
+    "created_at": "2026-07-09T10:00:00Z",
+    "updated_at": "2026-07-09T10:00:00Z",
+    "closed_at": null,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "assignee": null,
+    "assignees": [],
+    "requested_reviewers": [],
+    "requested_teams": [],
+    "labels": [],
+    "milestone": null,
+    "draft": false,
+    "head": {
+      "label": "octocat:feature/webhook",
+      "ref": "feature/webhook",
+      "sha": "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000",
+      "user": {
+        "login": "octocat",
+        "id": 1,
+        "type": "User"
+      },
+      "repo": {
+        "id": 1296269,
+        "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+        "name": "hello-world",
+        "full_name": "octocat/hello-world",
+        "private": false,
+        "owner": {
+          "login": "octocat",
+          "id": 1,
+          "type": "User"
+        },
+        "html_url": "https://github.com/octocat/hello-world",
+        "description": "This your first repo!",
+        "fork": false,
+        "url": "https://api.github.com/repos/octocat/hello-world"
+      }
+    },
+    "base": {
+      "label": "octocat:main",
+      "ref": "main",
+      "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+      "user": {
+        "login": "octocat",
+        "id": 1,
+        "type": "User"
+      },
+      "repo": {
+        "id": 1296269,
+        "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+        "name": "hello-world",
+        "full_name": "octocat/hello-world",
+        "private": false,
+        "owner": {
+          "login": "octocat",
+          "id": 1,
+          "type": "User"
+        },
+        "html_url": "https://github.com/octocat/hello-world",
+        "description": "This your first repo!",
+        "fork": false,
+        "url": "https://api.github.com/repos/octocat/hello-world"
+      }
+    }
+  },
+  "repository": {
+    "id": 1296269,
+    "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+    "name": "hello-world",
+    "full_name": "octocat/hello-world",
+    "private": false,
+    "owner": {
+      "login": "octocat",
+      "id": 1,
+      "node_id": "MDQ6VXNlcjE=",
+      "type": "User"
+    },
+    "html_url": "https://github.com/octocat/hello-world",
+    "description": "This your first repo!",
+    "fork": false,
+    "url": "https://api.github.com/repos/octocat/hello-world"
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "node_id": "MDQ6VXNlcjE=",
+    "type": "User"
+  }
+}

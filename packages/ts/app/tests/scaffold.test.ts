@@ -8,6 +8,6 @@ describe("scaffold", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string; service: string };
     expect(body.status).toBe("ok");
-    expect(body.service).toBe("enten");
+    expect(body.service).toBe("enten-webhook");
   });
 });

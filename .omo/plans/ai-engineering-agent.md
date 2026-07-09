@@ -277,14 +277,14 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 > Task labels use bare numbers (`1.`, `2.`, etc.) — NO `T1.`, `Phase 1:`, `Task-1.`.
 > Final Wave labels use `F` + number (`F1.`, `F2.`, etc.) — NO `T-F1.`, `Final-1.`, `F-1.`.
 
-- [ ] 1. Monorepo skeleton — pnpm workspaces + uv workspace + root Makefile + docs/ + .gitignore + .editorconfig + README stub
-- [ ] 2. devenv.sh Nix shell + Docker Compose stack — Postgres+pgvector, Jaeger, app, optional Ollama
-- [ ] 3. Typed configuration — pydantic-settings (Py) + zod+dotenv (TS) + .env.example + structlog/pino redaction filters
-- [ ] 4. Structured logging — structlog (Py) + pino (TS), JSON output, correlation IDs, run-id generation
+- [x] 1. Monorepo skeleton — pnpm workspaces + uv workspace + root Makefile + docs/ + .gitignore + .editorconfig + README stub
+- [x] 2. devenv.sh Nix shell + Docker Compose stack — Postgres+pgvector, Jaeger, app, optional Ollama
+- [x] 3. Typed configuration — pydantic-settings (Py) + zod+dotenv (TS) + .env.example + structlog/pino redaction filters
+- [x] 4. Structured logging — structlog (Py) + pino (TS), JSON output, correlation IDs, run-id generation
 - [ ] 5. OpenTelemetry wiring — SDK bootstrap (Py + TS) + Jaeger exporter + Prometheus /metrics + trace-context propagation
-- [ ] 6. Test infrastructure — pytest + pytest-asyncio + pytest-cov + testcontainers + Vitest + @vitest/coverage-v8 + determinism fixture stub + coverage gate (80%)
-- [ ] 7. CI matrix — GitHub Actions workflow (Py 3.11/3.12 × Node 20/22 × ubuntu/macos) for bot's own code
-- [ ] 8. Alembic migrations skeleton + Postgres schemas — jobs, pr_reviews, llm_calls, fixtures; CHECK constraints and indexes
+- [x] 6. Test infrastructure — pytest + pytest-asyncio + pytest-cov + testcontainers + Vitest + @vitest/coverage-v8 + determinism fixture stub + coverage gate (80%)
+- [x] 7. CI matrix — GitHub Actions workflow (Py 3.11/3.12 × Node 20/22 × ubuntu/macos) for bot's own code
+- [x] 8. Alembic migrations skeleton + Postgres schemas — jobs, pr_reviews, llm_calls, fixtures; CHECK constraints and indexes
 - [ ] 9. GitHub App webhook receiver (TS) — manifest, signature validation, 5s return, /health endpoint, /metrics
 - [ ] 10. Postgres-backed job queue — SELECT FOR UPDATE SKIP LOCKED, state machine (queued → indexing → reviewing → testing → verifying → commenting → done | failed), idempotency keys
 - [ ] 11. Worker process — graceful shutdown, exponential-backoff retry, crash recovery (mark in_progress > N min as failed)
