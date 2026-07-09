@@ -15,6 +15,7 @@ import structlog
 from enten.config import Settings
 from enten.github.auth import create_jwt
 from enten.github.models import CheckRun, CheckRunOutput, Comment, PRFile, PullRequest
+from enten.rate_limit import _default_registry
 
 logger = structlog.get_logger()
 
@@ -48,6 +49,9 @@ class GitHubClient:
         self.github_webhook_secret = settings.github_webhook_secret
         self.committer_email = settings.committer_email
         self.github_app_slug = settings.github_app_slug
+        self._rate_limit_bucket = _default_registry.get(
+            "github", capacity=100, refill_rate=1.0
+        )
         self._client = httpx.AsyncClient(
             base_url=GITHUB_API_BASE,
             timeout=REQUEST_TIMEOUT,
@@ -131,6 +135,11 @@ class GitHubClient:
 
         attempt = 0
         while True:
+            await asyncio.to_thread(
+                self._rate_limit_bucket.acquire,
+                blocking=True,
+                timeout=30.0,
+            )
             response = await self._client.request(
                 method,
                 path,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
@@ -14,10 +15,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError, create_model
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from enten.config import LLMProvider as ConfigLLMProvider
 from enten.config import Settings
 from enten.db import get_session
 from enten.llm.models_pricing import PRICING
 from enten.llm.types import LLMProvider, LLMResponse, Message, ToolSchema, ToolUse, Usage
+from enten.rate_limit import _default_registry
 
 
 class AgentLoopSpec(BaseModel):
@@ -54,6 +57,16 @@ class LLMClient:
         self.provider = provider
         self.settings = settings
         self._db = db
+        self._rate_limit_bucket = self._select_rate_limit_bucket(settings)
+
+    @staticmethod
+    def _select_rate_limit_bucket(settings: Settings):
+        """Return the shared token bucket for the configured LLM provider."""
+        if settings.llm_provider == ConfigLLMProvider.OLLAMA:
+            return _default_registry.get("ollama", capacity=10, refill_rate=5.0)
+        if "openrouter" in settings.llm_openai_base_url.lower():
+            return _default_registry.get("anthropic", capacity=60, refill_rate=1.0)
+        return _default_registry.get("openai", capacity=120, refill_rate=2.0)
 
     async def complete(
         self,
@@ -70,6 +83,12 @@ class LLMClient:
         resolved_model = model or self.settings.llm_default_model
         normalized_messages = [self._as_message(m) for m in messages]
         normalized_tools = [self._as_tool_schema(t) for t in (tools or [])]
+
+        await asyncio.to_thread(
+            self._rate_limit_bucket.acquire,
+            blocking=True,
+            timeout=30.0,
+        )
 
         started_at = time.monotonic()
         response = await self.provider.complete(
