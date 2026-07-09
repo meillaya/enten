@@ -22,11 +22,27 @@ classifiers = [
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.7.0",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
 # Filled in by T05 (config), T08 (db), etc. Keep empty for the scaffold.
 dev = []
+# T06 — pytest suite.
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "pytest-xdist>=3.5",
+    "testcontainers[postgres]>=4.0",
+    "httpx>=0.27",
+    "respx>=0.21",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "asyncpg>=0.29",
+]
 
 [project.scripts]
 enten = "enten.cli:app"
@@ -46,6 +62,7 @@ packages = ["src/enten"]
 # ─── Pytest configuration (consumed by `uv run pytest` in this package) ──
 [tool.pytest.ini_options]
 minversion = "8.0"
+asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-q"
 pythonpath = ["src"]
@@ -57,3 +74,13 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["UP042"]
+
+[dependency-groups]
+dev = [
+    "freezegun>=1.5.5",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+]
