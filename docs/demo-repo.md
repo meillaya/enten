@@ -40,3 +40,31 @@ demo-repo/
   commit, runs the agent, then diffs the result.
 
 See also `architecture.md` for the broader system shape.
+
+## Local stack
+
+The Postgres + Jaeger backing services live in
+[`docker-compose.yml`](../docker-compose.yml). Two helper scripts wrap
+the common cases:
+
+```bash
+scripts/dev-up.sh              # start postgres + jaeger; wait for healthy
+scripts/dev-down.sh            # stop everything; drop the pgdata volume
+scripts/dev-up.sh --with-dev   # also apply docker-compose.dev.yml
+                               # (bind-mount the repo into the `app` service
+                               # for live reload once T40 adds the real image)
+scripts/dev-up.sh --with-ollama  # add Ollama (local LLM backend) under the
+                                 # `ollama` profile
+```
+
+Endpoints exposed by the default stack:
+
+| Service  | URL                                              | Notes                       |
+|----------|--------------------------------------------------|-----------------------------|
+| Postgres | `postgresql://enten:enten@localhost:5432/enten`  | `pgvector` extension enabled|
+| Jaeger   | http://localhost:16686                           | UI + `/api/services` JSON   |
+| OTLP     | http://localhost:4317 (gRPC) · :4318 (HTTP)      | OTel SDK export target      |
+
+The `app` service is a busybox placeholder; the real image arrives in
+T40. Until then the dev stack is just the persistence + observability
+backbone that Alembic (T08) and the OTel SDK (T05) will plug into.

@@ -1,0 +1,122 @@
+# ─── enten — local dev stack ───────────────────────────────────────────
+# Postgres + pgvector: persistence for jobs, PR reviews, llm_calls,
+#   fixtures, and the vector index. pg16 ships the `vector` extension
+#   pre-installed (image: pgvector/pgvector:pg16), so we can skip the
+#   CREATE EXTENSION step inside the build arg and just enable it from
+#   psql on first connect.
+# Jaeger: OTLP trace collector + UI on :16686. Py and TS apps export
+#   OTel spans here (T05).
+# app: placeholder. T40 will replace `image: busybox` with
+#   `build: .` and add the production Dockerfile.
+# ollama: optional, opt-in via `--profile ollama` for local LLM runs.
+#
+# Quick start:
+#   scripts/dev-up.sh        # postgres + jaeger, with healthchecks
+#   scripts/dev-down.sh      # stop + drop the named volume
+#   docker compose --profile ollama up ollama   # local LLM backend
+#
+# All credentials are dev defaults. Production secrets must come from
+# the host env / a secret store, not from this file.
+
+name: enten
+
+services:
+  # ─── Postgres + pgvector ─────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: enten-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: enten
+      POSTGRES_PASSWORD: enten
+      POSTGRES_DB: enten
+      # Production sets POSTGRES_PASSWORD via the host env / a secret
+      # store. The value here is a dev default and is intentionally
+      # weak; do NOT reuse these credentials outside local dev.
+    ports:
+      # Default 5432; override via `POSTGRES_HOST_PORT` in `.env` when
+      # the host already binds a Postgres on 5432.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      # Named volume keeps data across `docker compose restart` and
+      # cold `up/down/up` cycles. Dropped by `docker compose down -v`
+      # (used by scripts/dev-down.sh).
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready returns 0 when the server accepts connections.
+      # `-U enten -d enten` checks the actual database, not just the
+      # cluster — important because pgvector's CREATE EXTENSION runs
+      # against a specific DB.
+      test: ["CMD-SHELL", "pg_isready -U enten -d enten"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ─── Jaeger (OTLP collector + UI) ────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: enten-jaeger
+    restart: unless-stopped
+    environment:
+      # OTLP ingestion on 4317 (gRPC) + 4318 (HTTP). Required for
+      # T05 (OpenTelemetry wiring) to ship spans from the Py and TS
+      # apps to Jaeger.
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    healthcheck:
+      # 14269 is the Jaeger admin port (`/status` is the JSON form).
+      # wget --spider exits 0 on 2xx without downloading the body.
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:14269/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ─── app (placeholder until T40) ─────────────────────────────────────
+  # T40: replace `image: busybox` with `build: .` once the production
+  # Dockerfile lands. The `profiles: ["app"]` line keeps this service
+  # out of `docker compose up` (no implicit start); bring it up
+  # explicitly with `docker compose --profile app up app`.
+  app:
+    image: busybox
+    container_name: enten-app
+    profiles: ["app"]
+    command: ["sleep", "infinity"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+
+  # ─── Ollama (optional, opt-in) ───────────────────────────────────────
+  # Pull a model on first start with:
+  #   docker compose --profile ollama run --rm ollama ollama pull llama3.1
+  # GPU passthrough is commented out — uncomment on a host with NVIDIA
+  # Container Toolkit installed. On macOS / non-NVIDIA Linux, the
+  # CPU-only fallback is plenty for the eval fixture set.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: enten-ollama
+    profiles: ["ollama"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  pgdata:
+    name: enten-pgdata
+  ollama-data:
+    name: enten-ollama-data
