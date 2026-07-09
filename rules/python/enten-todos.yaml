@@ -1,0 +1,9 @@
+rules:
+  - id: enten-todos
+    languages: [python]
+    message: "Unresolved TODO comment"
+    severity: INFO
+    pattern-regex: '# TODO'
+    paths:
+      include:
+        - src/**

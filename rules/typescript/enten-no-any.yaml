@@ -1,0 +1,9 @@
+rules:
+  - id: enten-no-any
+    languages: [typescript]
+    message: "Avoid using `any` type"
+    severity: WARNING
+    pattern-regex: ":\\s*any\\s*(;|=|,|$)"
+    paths:
+      include:
+        - src/**

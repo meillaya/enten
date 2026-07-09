@@ -29,8 +29,10 @@ class DockerSandbox:
     WORKSPACE: str = "/workspace"
     MAX_TIMEOUT_SECONDS: int = 600
 
-    def __init__(self) -> None:
+    def __init__(self, image: str | None = None, network: str = "none") -> None:
         self._client: docker.DockerClient = docker.from_env()
+        self.image: str = image or self.IMAGE
+        self.network: str = network
 
     async def create(self, repo_files: dict[str, str]) -> SandboxHandle:
         """Create a hardened container seeded with ``repo_files``."""
@@ -45,7 +47,7 @@ class DockerSandbox:
 
             container = await asyncio.to_thread(
                 self._client.containers.run,
-                self.IMAGE,
+                self.image,
                 command="sleep infinity",
                 detach=True,
                 auto_remove=True,
@@ -56,14 +58,14 @@ class DockerSandbox:
                 mem_limit="4g",
                 nano_cpus=2_000_000_000,
                 user="1000:1000",
-                network="none",
+                network=self.network,
                 volumes={str(tmpdir): {"bind": self.WORKSPACE, "mode": "rw"}},
                 working_dir=self.WORKSPACE,
             )
             return SandboxHandle(
                 id=container.id,
                 provider="docker",
-                image=self.IMAGE,
+                image=self.image,
             )
         except Exception:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -155,8 +157,8 @@ class DockerSandbox:
         await asyncio.to_thread(container.stop, timeout=10)
 
     async def _ensure_image(self) -> None:
-        """Pull the base image if it is not already present locally."""
+        """Pull the configured image if it is not already present locally."""
         try:
-            _ = await asyncio.to_thread(self._client.images.get, self.IMAGE)
+            _ = await asyncio.to_thread(self._client.images.get, self.image)
         except ImageNotFound:
-            _ = await asyncio.to_thread(self._client.images.pull, self.IMAGE)
+            _ = await asyncio.to_thread(self._client.images.pull, self.image)

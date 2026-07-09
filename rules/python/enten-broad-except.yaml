@@ -1,0 +1,9 @@
+rules:
+  - id: enten-broad-except
+    languages: [python]
+    message: "Avoid bare `except:` or overly broad `except Exception:`"
+    severity: WARNING
+    pattern-regex: "except\\s*:|except\\s+Exception\\s*:"
+    paths:
+      include:
+        - src/**

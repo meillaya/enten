@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATABASE_URL = "postgresql+asyncpg://enten:enten@localhost:5433/enten"
-EXPECTED_TABLES = {"jobs", "pr_reviews", "llm_calls", "fixtures", "sandbox_runs"}
+EXPECTED_TABLES = {"jobs", "pr_reviews", "llm_calls", "fixtures", "sandbox_runs", "chunks"}
 
 
 @pytest.mark.slow

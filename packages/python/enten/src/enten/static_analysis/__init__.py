@@ -7,9 +7,19 @@ from enten.static_analysis.security import (
     SecurityReport,
     run_security_checks,
 )
+from enten.static_analysis.semgrep import (
+    SemgrepFinding,
+    SemgrepResult,
+    SemgrepRuleError,
+    run_semgrep,
+)
 
 __all__ = [
     "SecurityFinding",
     "SecurityReport",
+    "SemgrepFinding",
+    "SemgrepResult",
+    "SemgrepRuleError",
+    "run_semgrep",
     "run_security_checks",
 ]

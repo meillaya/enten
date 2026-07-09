@@ -1,14 +1,21 @@
-"""Shared pytest fixtures for the ``enten`` Python package.
-
-Scaffold fixture set only — T06 (test infrastructure) will populate this
-with real fixtures (tmp dirs, async runners, golden diffs, etc.).
-"""
+"""Shared pytest fixtures for the ``enten`` Python package."""
 
 from __future__ import annotations
 
 import pytest
 
 from enten import __version__
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "network: tests that intentionally hit external network (off by default).",
+    )
+    config.addinivalue_line(
+        "markers",
+        "slow: tests that take > 1s (e.g. testcontainers spin-up).",
+    )
 
 
 @pytest.fixture(scope="session")

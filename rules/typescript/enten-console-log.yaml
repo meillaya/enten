@@ -1,0 +1,9 @@
+rules:
+  - id: enten-console-log
+    languages: [typescript, javascript]
+    message: "Avoid console.log in production code"
+    severity: WARNING
+    pattern: console.log(...)
+    paths:
+      include:
+        - src/**

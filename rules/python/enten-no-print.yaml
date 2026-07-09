@@ -1,0 +1,9 @@
+rules:
+  - id: enten-no-print
+    languages: [python]
+    message: "Avoid print(...) in production code"
+    severity: WARNING
+    pattern: print(...)
+    paths:
+      include:
+        - src/**

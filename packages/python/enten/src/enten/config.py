@@ -117,6 +117,15 @@ class Settings(BaseSettings):
     # Ollama's local daemon; only consulted when ``llm_provider == ollama``.
     llm_ollama_base_url: str = "http://localhost:11434"
 
+    # ── Embeddings (Py core) ───────────────────────────────────────────────
+    embedding_provider: str = "openai-compat"
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = None
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimension: int = 1024
+    embedding_timeout: float = 30.0
+    embedding_batch_size: int = 64
+
     # ── Sandbox provider ─────────────────────────────────────────────────
     sandbox_provider: SandboxProvider = SandboxProvider.DOCKER
     # Required when ``sandbox_provider == e2b``.
