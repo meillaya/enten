@@ -1,18 +1,15 @@
-name: enten
-description: AI engineering agent that reviews and patches pull requests
-url: https://github.com/<owner>/enten
-setup_url: https://github.com/<owner>/enten/blob/main/docs/github-app-setup.md
-redirect_url: https://github.com/<owner>/enten/oauth/callback
+name: enten-bot
+url: https://github.com/enten/enten
 hook_attributes:
-  url: https://webhook.example.com/webhook
-  content_type: json
+  url: $RENDER_EXTERNAL_URL/webhook
   active: true
-default_permissions:
-  pull_requests: write
-  checks: write
-  metadata: read
+redirect_url: https://github.com/enten/enten
+public: false
 default_events:
   - pull_request
   - pull_request_review
   - issue_comment
-public: false
+default_permissions:
+  pull_requests: write
+  checks: write
+  metadata: read
