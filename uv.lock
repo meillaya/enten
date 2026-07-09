@@ -448,6 +448,7 @@ source = { editable = "packages/python/enten" }
 dependencies = [
     { name = "asyncpg" },
     { name = "cryptography" },
+    { name = "docker" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-instrumentation-asyncio" },
@@ -494,6 +495,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'test'", specifier = ">=0.29" },
     { name = "cryptography", specifier = ">=42" },
+    { name = "docker", specifier = ">=7.2.0" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.27" },
     { name = "opentelemetry-api", specifier = ">=1.43.0" },
     { name = "opentelemetry-api", marker = "extra == 'test'", specifier = ">=1.27" },
