@@ -171,6 +171,14 @@ def _language_for_file(path: str, language: Lang) -> Language:
     return _load_language(language)
 
 
+def _identifier_from_node(source: bytes, node: Node) -> str | None:
+    """Return the text of the first identifier child using byte offsets."""
+    for child in node.children:
+        if child.type in ("identifier", "property_identifier"):
+            return source[child.start_byte : child.end_byte].decode("utf-8")
+    return None
+
+
 def _node_name(source: bytes, node: Node) -> str | None:
     """Best-effort extraction of an identifier name from an AST node."""
     if node.type == "decorated_definition":
@@ -188,10 +196,7 @@ def _node_name(source: bytes, node: Node) -> str | None:
             if child.type == "variable_declarator":
                 return _node_name(source, child)
         return None
-    name_node = node.child_by_field_name("name")
-    if name_node is not None and name_node.type in ("identifier", "property_identifier"):
-        return source[name_node.start_byte : name_node.end_byte].decode("utf-8")
-    return None
+    return _identifier_from_node(source, node)
 
 
 def _node_line(node: Node) -> int:
@@ -236,6 +241,8 @@ _DEFINITION_TYPES = frozenset({
     "function_declaration",
     "class_declaration",
     "method_definition",
+    "export_statement",
+    "lexical_declaration",
 })
 
 

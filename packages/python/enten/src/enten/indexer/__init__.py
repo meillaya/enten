@@ -15,9 +15,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from enten.indexer.chunker import Chunk as _Chunk
-from enten.indexer.chunker import Symbol as _Symbol
 from enten.indexer.chunker import index_diff as _index_diff
 from enten.indexer.chunker import index_repo as _index_repo
+
+__all__ = ["Chunk", "Symbol", "index_diff", "index_repo"]
 
 
 class Symbol(BaseModel):
@@ -54,7 +55,10 @@ def _to_public(chunk: _Chunk) -> Chunk:
         start_byte=chunk.start_byte,
         end_byte=chunk.end_byte,
         text=chunk.text,
-        symbols=[Symbol(**s.model_dump()) for s in chunk.symbols],
+        symbols=[
+            Symbol(kind=s.kind, name=s.name, line=s.line, parent=s.parent)
+            for s in chunk.symbols
+        ],
         scope_kind=chunk.scope_kind,
     )
 

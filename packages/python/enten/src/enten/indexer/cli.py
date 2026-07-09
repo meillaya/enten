@@ -12,7 +12,7 @@ from typing import Literal
 
 import typer
 
-from enten.indexer import Chunk, index_repo
+from enten.indexer import index_repo
 
 app = typer.Typer(
     name="enten.indexer",
@@ -24,9 +24,11 @@ app = typer.Typer(
 
 @app.command()
 def main(
-    path: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True, readable=True),
-    lang: Literal["python", "typescript"] = typer.Option("python", "--lang"),
-    output: Path | None = typer.Option(None, "--output", "-o"),
+    path: Path = typer.Argument(  # noqa: B008
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True
+    ),
+    lang: Literal["python", "typescript"] = typer.Option("python", "--lang"),  # noqa: B008
+    output: Path | None = typer.Option(None, "--output", "-o"),  # noqa: B008
 ) -> None:
     """Index *path* and print a JSON summary of the chunks."""
     chunks = index_repo(str(path), lang)
