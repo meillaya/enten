@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enten.config import SandboxProvider as SandboxProviderEnum
 from enten.config import Settings
+
 from .protocol import SandboxProvider
 
 
@@ -16,7 +17,7 @@ def get_provider(settings: Settings) -> SandboxProvider:
 
         return DockerSandbox()
     if settings.sandbox_provider == SandboxProviderEnum.E2B:
-        from enten.sandbox.e2b import E2BSandbox  # type: ignore[import-not-found]
+        from enten.sandbox.e2b import E2BSandbox
 
-        return E2BSandbox()
+        return E2BSandbox(settings)
     raise ValueError(f"Unsupported sandbox provider: {settings.sandbox_provider}")
