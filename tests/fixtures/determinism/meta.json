@@ -1,0 +1,9 @@
+{
+  "purpose": "Determinism fixture used by T06/T37 to assert that two runs of the bot against the same PR produce byte-identical pass/fail verdicts.",
+  "source": "synthetic",
+  "repo": "demo",
+  "maintainer_note": "This is a minimal placeholder. T36 expands the fixture corpus with real PR shapes derived from the demo repo.",
+  "related_files": [
+    "tests/fixtures/determinism/pr.json"
+  ]
+}

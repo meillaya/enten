@@ -6,4 +6,6 @@
 *
 !*/
 !*.gitignore
+!*.gitkeep
 !*.json
+*.tar.gz
