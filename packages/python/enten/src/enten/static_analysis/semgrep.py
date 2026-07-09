@@ -90,7 +90,7 @@ async def run_semgrep(
 
     handle = await sandbox.create(_repo_files(repo_path))
     try:
-        uploaded: dict[str, str] = {}
+        uploaded: dict[str, str | bytes] = {}
         sandbox_rule_paths: list[str] = []
         for rule_path in custom_rule_paths:
             rule_file = Path(rule_path)
@@ -117,9 +117,10 @@ async def run_semgrep(
             if _is_rule_error(error):
                 raise SemgrepRuleError(str(error))
 
+        findings = [SemgrepFinding.model_validate(f.model_dump()) for f in parsed.results]
         return SemgrepResult(
             exit_code=parsed.exit_code,
-            findings=parsed.results,
+            findings=findings,
             errors=[str(error) for error in parsed.errors],
         )
     finally:

@@ -29,10 +29,18 @@ class DockerSandbox:
     WORKSPACE: str = "/workspace"
     MAX_TIMEOUT_SECONDS: int = 600
 
-    def __init__(self, image: str | None = None, network: str = "none") -> None:
+    def __init__(
+        self,
+        image: str | None = None,
+        network: str = "none",
+        tmpfs: dict[str, str] | None = None,
+        environment: dict[str, str] | None = None,
+    ) -> None:
         self._client: docker.DockerClient = docker.from_env()
         self.image: str = image or self.IMAGE
         self.network: str = network
+        self.tmpfs: dict[str, str] = tmpfs or {}
+        self.environment: dict[str, str] = environment or {}
 
     async def create(self, repo_files: dict[str, str]) -> SandboxHandle:
         """Create a hardened container seeded with ``repo_files``."""
@@ -61,6 +69,8 @@ class DockerSandbox:
                 network=self.network,
                 volumes={str(tmpdir): {"bind": self.WORKSPACE, "mode": "rw"}},
                 working_dir=self.WORKSPACE,
+                tmpfs=self.tmpfs or None,
+                environment=self.environment or None,
             )
             return SandboxHandle(
                 id=container.id,

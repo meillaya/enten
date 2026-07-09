@@ -9,13 +9,20 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from enten.sandbox.docker import DockerSandbox
 from enten.static_analysis.semgrep import SemgrepRuleError, run_semgrep
 
-SEMgrep_IMAGE = "returntocorp/semgrep:latest"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+SEMGREP_IMAGE = "returntocorp/semgrep:latest"
+SEMGREP_TMPFS = {
+    "/tmp": "rw,noexec,nosuid,size=100m",
+    "/home/semgrep": "rw,noexec,nosuid,size=100m,uid=1000",
+}
 
 
 def _docker_available() -> bool:
@@ -34,7 +41,11 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def semgrep_provider() -> DockerSandbox:
-    return DockerSandbox(image=SEMgrep_IMAGE, network="bridge")
+    return DockerSandbox(
+        image=SEMGREP_IMAGE,
+        network="bridge",
+        tmpfs=SEMGREP_TMPFS,
+    )
 
 
 @pytest.mark.slow
@@ -42,7 +53,6 @@ def semgrep_provider() -> DockerSandbox:
 @pytest.mark.asyncio
 async def test_python_broad_except_rule_fires(
     tmp_path,
-    repo_root,
     semgrep_provider,
 ):
     repo = tmp_path / "repo"
@@ -53,7 +63,7 @@ async def test_python_broad_except_rule_fires(
         encoding="utf-8",
     )
 
-    rule = repo_root / "rules/python/enten-broad-except.yaml"
+    rule = REPO_ROOT / "rules/python/enten-broad-except.yaml"
     result = await run_semgrep(
         semgrep_provider,
         str(repo),
@@ -62,7 +72,7 @@ async def test_python_broad_except_rule_fires(
     )
 
     assert result.exit_code == 1
-    broad = [f for f in result.findings if f.check_id == "enten-broad-except"]
+    broad = [f for f in result.findings if f.check_id.endswith("enten-broad-except")]
     assert len(broad) == 1
     assert broad[0].path.endswith("bad.py")
     assert broad[0].severity == "WARNING"
@@ -73,7 +83,6 @@ async def test_python_broad_except_rule_fires(
 @pytest.mark.asyncio
 async def test_typescript_no_any_rule_fires(
     tmp_path,
-    repo_root,
     semgrep_provider,
 ):
     repo = tmp_path / "repo"
@@ -84,7 +93,7 @@ async def test_typescript_no_any_rule_fires(
         encoding="utf-8",
     )
 
-    rule = repo_root / "rules/typescript/enten-no-any.yaml"
+    rule = REPO_ROOT / "rules/typescript/enten-no-any.yaml"
     result = await run_semgrep(
         semgrep_provider,
         str(repo),
@@ -93,7 +102,7 @@ async def test_typescript_no_any_rule_fires(
     )
 
     assert result.exit_code == 1
-    no_any = [f for f in result.findings if f.check_id == "enten-no-any"]
+    no_any = [f for f in result.findings if f.check_id.endswith("enten-no-any")]
     assert len(no_any) == 1
     assert no_any[0].path.endswith("bad.ts")
     assert no_any[0].severity == "WARNING"
@@ -110,12 +119,13 @@ async def test_bad_rule_yaml_raises(tmp_path, semgrep_provider):
 
     bad_rule = repo / "bad.yaml"
     bad_rule.write_text(
-        "rules:\n"
-        "  - id: bad\n"
-        "    languages: [python]\n"
-        "    message: \"bad\"\n"
-        "    severity: WARNING\n"
-        "    pattern: \"bad: yaml: :\"\n",
+        """rules:
+  - id: bad
+    languages: [python]
+    message: "bad"
+    severity: WARNING
+    pattern: "bad: yaml: :"
+""",
         encoding="utf-8",
     )
 
