@@ -1,0 +1,4 @@
+{
+  "kind": "no_false_positive",
+  "description": "Synthetic clean formatting-only change that should produce no findings."
+}

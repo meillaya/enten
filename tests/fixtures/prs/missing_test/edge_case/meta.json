@@ -1,0 +1,4 @@
+{
+  "kind": "missing_test",
+  "description": "Synthetic edge-case handling without a dedicated test."
+}

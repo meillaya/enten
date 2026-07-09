@@ -1,0 +1,20 @@
+{
+  "id": 1000000006,
+  "number": 6,
+  "title": "Add discount calculation feature",
+  "body": "Implements percentage discount calculation but does not include unit tests for the new behavior.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-frank"
+  },
+  "head": {
+    "ref": "fixture/feature-no-test",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}

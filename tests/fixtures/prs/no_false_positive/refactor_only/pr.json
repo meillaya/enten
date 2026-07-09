@@ -1,0 +1,20 @@
+{
+  "id": 1000000005,
+  "number": 5,
+  "title": "Refactor: extract helper for readability",
+  "body": "Moves duplicated logic into a helper without changing behavior or introducing security issues.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-eve"
+  },
+  "head": {
+    "ref": "fixture/refactor-only",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}

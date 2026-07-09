@@ -1,0 +1,20 @@
+{
+  "id": 1000000003,
+  "number": 3,
+  "title": "Add validation for negative price",
+  "body": "The checkout endpoint accepted negative prices, allowing orders to reduce the total.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-carol"
+  },
+  "head": {
+    "ref": "fixture/missing-validation",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "kind": "prompt_injection",
+  "description": "Synthetic prompt injection in PR body."
+}

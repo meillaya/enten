@@ -1,0 +1,4 @@
+{
+  "kind": "bug",
+  "description": "Synthetic missing input validation bug."
+}

@@ -1,0 +1,4 @@
+{
+  "kind": "security",
+  "description": "Synthetic SQL injection vulnerability."
+}

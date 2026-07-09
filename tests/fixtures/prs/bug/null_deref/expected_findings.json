@@ -1,0 +1,9 @@
+[
+  {
+    "category": "bug",
+    "severity": "high",
+    "file": "src/users.py",
+    "line": 13,
+    "rationale": "Potential null pointer dereference: get_user may return None before the patch adds a guard."
+  }
+]

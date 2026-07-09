@@ -1,0 +1,20 @@
+{
+  "id": 1000000008,
+  "number": 8,
+  "title": "Fix SQL injection in search endpoint",
+  "body": "The search query was concatenated directly into a SQL string. The patch parameterizes it.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-hank"
+  },
+  "head": {
+    "ref": "fixture/sql-injection",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}

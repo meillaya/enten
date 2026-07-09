@@ -1,0 +1,20 @@
+{
+  "id": 1000000009,
+  "number": 9,
+  "title": "Remove hardcoded API key",
+  "body": "A placeholder AWS access key was committed to the repository. This patch moves it to environment configuration.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-ivy"
+  },
+  "head": {
+    "ref": "fixture/hardcoded-secret",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}

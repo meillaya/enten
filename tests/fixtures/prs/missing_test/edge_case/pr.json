@@ -1,0 +1,20 @@
+{
+  "id": 1000000007,
+  "number": 7,
+  "title": "Handle division in average calculation",
+  "body": "Adds average helper but omits a test for the empty input edge case.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-grace"
+  },
+  "head": {
+    "ref": "fixture/edge-case",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}

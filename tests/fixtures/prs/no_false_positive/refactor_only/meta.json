@@ -1,0 +1,4 @@
+{
+  "kind": "no_false_positive",
+  "description": "Synthetic refactor-only change that should produce no findings."
+}

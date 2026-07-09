@@ -1,0 +1,20 @@
+{
+  "id": 1000000002,
+  "number": 2,
+  "title": "Fix null pointer dereference in user lookup",
+  "body": "get_user could return None and the caller immediately dereferenced .name without checking.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "dev-bob"
+  },
+  "head": {
+    "ref": "fixture/null-deref",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  }
+}
