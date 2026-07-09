@@ -41,9 +41,11 @@ def test_load_latest_defaults_to_v1() -> None:
 
 
 def test_review_render_returns_nonempty_system_and_user() -> None:
-    """Rendering review@v1 with both variables yields non-empty system and user."""
+    """Rendering review@v1 with all variables yields non-empty system and user."""
     prompt = load_prompt("review")
-    system, user = render(prompt, {"diff": "x", "retrieved_context": "y"})
+    system, user = render(
+        prompt, {"diff": "x", "pr_title": "t", "pr_body": "b", "retrieved_context": "y"}
+    )
     assert system
     assert user
     assert "x" in user
