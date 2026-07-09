@@ -78,7 +78,7 @@ export function parse(
   // Flatten the zod issue tree into a single human-readable line so
   // operators don't have to scroll through a nested error object at
   // boot. We keep the first issue's path so they know *which* var.
-  const first = result.error.issues[0];
-  const path = first?.path.length ? `${first.path.join(".")}: ` : "";
-  return { ok: false, error: `${path}${first?.message ?? "invalid env"}` };
+  const first = result.error.issues[0]!;
+  const path = first.path.length > 0 ? `${first.path.join(".")}: ` : "";
+  return { ok: false, error: `${path}${first.message}` };
 }

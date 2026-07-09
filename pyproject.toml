@@ -35,5 +35,13 @@ indent-style = "space"
 # ─── Pytest defaults (delegated to per-member pyproject) ────────────────
 [tool.pytest.ini_options]
 minversion = "8.0"
+asyncio_mode = "auto"
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--cov",
+    "--cov-branch",
+    "--cov-report=term-missing",
+]
 testpaths = ["tests"]
-addopts = "-q"

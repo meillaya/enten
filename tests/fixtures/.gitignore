@@ -1,0 +1,9 @@
+# Fixture corpus lives under tests/fixtures/ at the repo root.
+# Default: ignore everything; whitelist the small set of formats we keep.
+# The trailing `!*/` allows git to recurse into subdirectories so the
+# `!*.json` re-include picks up JSON files at any depth (e.g. tests/
+# fixtures/determinism/pr.json).
+*
+!*/
+!*.gitignore
+!*.json

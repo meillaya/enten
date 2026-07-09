@@ -1,0 +1,23 @@
+{
+  "id": 1234567890,
+  "number": 42,
+  "title": "Determinism fixture: minimal PR for two-runs-must-match",
+  "body": "Placeholder PR used by T06/T37 to assert byte-identical pass/fail verdicts when the bot runs the same PR through the pipeline twice. Real fixture corpus lands in T36.",
+  "state": "open",
+  "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",
+  "user": {
+    "login": "test-author"
+  },
+  "head": {
+    "ref": "fixture/determinism-minimal",
+    "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "feedfacefeedfacefeedfacefeedfacefeedface"
+  },
+  "files": {
+    "src/example.py": "--- a/src/example.py\n+++ b/src/example.py\n@@ -1,1 +1,1 @@\n-print('old')\n+print('new')\n"
+  }
+}
