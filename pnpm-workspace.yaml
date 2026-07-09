@@ -1,0 +1,13 @@
+packages:
+  - "packages/ts/*"
+
+# Re-exports — packages depending on shared TS libs should be hoisted here.
+# (Reserved for future use; left empty for the initial scaffold.)
+catalog: {}
+
+# Pnpm 11 enforces an allowlist for post-install build scripts. We opt in
+# to the well-known safe packages the TypeScript toolchain depends on
+# (esbuild for vitest, protobufjs for the Octokit wire format).
+allowBuilds:
+  esbuild: true
+  protobufjs: true

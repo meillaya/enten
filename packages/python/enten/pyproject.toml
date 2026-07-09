@@ -1,0 +1,59 @@
+[project]
+name = "enten"
+version = "0.1.0"
+description = "enten - AI engineering agent (Python core)"
+readme = "../../../README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "enten contributors" },
+]
+keywords = ["ai", "agent", "engineering", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+# Filled in by T05 (config), T08 (db), etc. Keep empty for the scaffold.
+dev = []
+
+[project.scripts]
+enten = "enten.cli:app"
+
+[project.urls]
+"Homepage" = "https://github.com/enten/enten"
+"Issues" = "https://github.com/enten/enten/issues"
+
+# ─── Hatch build backend ────────────────────────────────────────────────
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/enten"]
+
+# ─── Pytest configuration (consumed by `uv run pytest` in this package) ──
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+# ─── Ruff configuration (inherits from root, can be overridden here) ───
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

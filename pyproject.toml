@@ -1,0 +1,39 @@
+[project]
+name = "enten-monorepo"
+version = "0.1.0"
+description = "enten - AI engineering agent (bilingual Python+TypeScript monorepo)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "enten contributors" },
+]
+# The root has no runtime code; it only orchestrates the workspace.
+# We declare an empty dependency set so `uv sync` works at the root.
+
+[tool.uv]
+# The uv workspace itself; members are listed in [tool.uv.workspace] below.
+managed = true
+
+[tool.uv.workspace]
+members = ["packages/python/*"]
+
+# ─── Linting / formatting defaults (delegated to ruff) ─────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Reasonable defaults; tightened in T06.
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ─── Pytest defaults (delegated to per-member pyproject) ────────────────
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q"
