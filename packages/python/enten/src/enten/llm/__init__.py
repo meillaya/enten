@@ -5,6 +5,7 @@ from __future__ import annotations
 from enten.llm.client import AgentLoopSpec, CostCapExceeded, LLMClient, LoopDetectedError
 from enten.llm.models_pricing import PRICING
 from enten.llm.ollama import OllamaProvider
+from enten.llm.openai_compat import OpenAICompatProvider
 from enten.llm.stub import StubProvider
 from enten.llm.types import (
     ContentPart,
@@ -30,6 +31,7 @@ __all__ = [
     "LoopDetectedError",
     "Message",
     "OllamaProvider",
+    "OpenAICompatProvider",
     "PRICING",
     "StubProvider",
     "ToolSchema",
