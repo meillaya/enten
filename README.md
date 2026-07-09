@@ -1,5 +1,7 @@
 # enten
 
+[![CI](https://github.com/<owner>/enten/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/enten/actions/workflows/ci.yml)
+
 Status: 🚧 under construction
 
 enten is an AI engineering agent that lives on top of your Git

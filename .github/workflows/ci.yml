@@ -1,0 +1,166 @@
+# no real LLM in CI — all tests use stubbed providers / no network calls
+# to the GitHub API or any LLM backend.
+#
+# CI matrix for the enten monorepo's own code:
+#   * python-test : Py 3.11 / 3.12  ×  ubuntu-latest / macos-latest  (4 combos)
+#   * ts-test     : Node 20 / 22    ×  ubuntu-latest / macos-latest  (4 combos)
+#
+# Two independent jobs — a failing Python build never blocks the TS side
+# and vice versa. Concurrency group cancels superseded runs on the same
+# ref so force-pushes don't burn minutes of runner time.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel any in-flight run for the same ref when a new commit lands.
+# Keeps CI minutes under control when someone force-pushes a branch
+# five times in two minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-test:
+    name: python (${{ matrix.python-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest, macos-latest]
+        # Explicit include so the matrix product is unambiguous in CI
+        # logs (4 rows: 3.11/ubuntu, 3.11/macos, 3.12/ubuntu, 3.12/macos).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      # uv's own dependency cache — keyed off uv.lock so a lockfile
+      # change busts the cache automatically. Restored before sync
+      # so the sync step can reuse wheels.
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ matrix.python-version }}-
+            uv-${{ runner.os }}-
+
+      - name: Sync workspace deps
+        run: uv sync --extra test
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      # mypy is best-effort for now — T03+ lands typed config and
+      # the rest of the package has gradually-accumulating hints.
+      # Failing mypy must NOT block the matrix.
+      - name: mypy (best-effort)
+        continue-on-error: true
+        run: uv run mypy packages/python/enten/src
+
+      - name: Pytest with coverage gate
+        run: |
+          bash scripts/check-coverage.sh
+        env:
+          # Stub values — the public CI never reaches a real
+          # GitHub App. LLM calls are intercepted by T06's
+          # no_llm_calls autouse fixture.
+          GITHUB_APP_ID: "0"
+          GITHUB_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nSTUB\n-----END RSA PRIVATE KEY-----"
+          GITHUB_WEBHOOK_SECRET: "stub-webhook-secret"
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-${{ matrix.python-version }}-${{ matrix.os }}
+          path: |
+            packages/python/enten/coverage.xml
+            packages/python/enten/.coverage
+            packages/python/enten/htmlcov
+          retention-days: 7
+          if-no-files-found: ignore
+
+  ts-test:
+    name: ts (node ${{ matrix.node-version }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["20", "22"]
+        os: [ubuntu-latest, macos-latest]
+        # Explicit include so the matrix product is unambiguous
+        # (4 rows: 20/ubuntu, 20/macos, 22/ubuntu, 22/macos).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # Pnpm is pinned to the exact version the lockfile was generated
+      # with (11.10.0). Newer pnpm majors may rewrite the lockfile.
+      - name: Install pnpm
+        run: npm i -g pnpm@11.10.0
+
+      # node_modules is huge and re-installing it from scratch on
+      # every matrix combo is ~30s of network we can skip.
+      # Keyed off pnpm-lock.yaml so a dep bump invalidates the cache.
+      - name: Cache pnpm store + node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/ts/*/node_modules
+            ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-${{ matrix.node-version }}-
+            pnpm-${{ runner.os }}-
+
+      - name: pnpm install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # Lint is best-effort: many workspaces don't ship an eslint
+      # config yet. The package.json's `lint` script is currently
+      # `echo 'lint: not configured (T07 will add eslint/biome)'`
+      # which exits 0, but if a future workspace removes the
+      # script entirely pnpm -r will fail with "no script". The
+      # `|| true` shields us from both cases.
+      - name: Lint (best-effort)
+        continue-on-error: true
+        run: pnpm -r run lint || true
+
+      - name: Typecheck (tsc --noEmit)
+        run: pnpm -r exec tsc --noEmit
+
+      - name: Vitest with coverage
+        run: pnpm -r --filter '@enten/app' exec vitest run --coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-ts-node${{ matrix.node-version }}-${{ matrix.os }}
+          path: |
+            packages/ts/app/coverage
+          retention-days: 7
+          if-no-files-found: ignore

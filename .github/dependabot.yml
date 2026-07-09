@@ -1,0 +1,55 @@
+# Dependabot weekly updates for the enten monorepo.
+#
+# Two ecosystems:
+#   * pip — uv-managed Python deps in /packages/python
+#           (root pyproject.toml intentionally has no runtime deps,
+#           so Dependabot only needs to watch the member package)
+#   * npm — pnpm-managed TypeScript deps in /packages/ts
+#           (root package.json has only pnpm + typescript devDeps;
+#           the real deps live in /packages/ts/app)
+#
+# Dev/runtime updates are grouped so a single PR covers a related
+# set of bumps — fewer PRs, easier review.
+
+version: 2
+
+updates:
+  # ─── pip (uv workspace) ──────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/packages/python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Dev updates only — runtime Python deps are bumped by hand
+    # because they ripple through the lockfile and uv.lock validation.
+    # T13+ may relax this once we trust the lockfile workflow.
+    groups:
+      pip-dev:
+        dependency-type: "development"
+        patterns:
+          - "*"
+
+  # ─── npm (pnpm workspace) ────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/packages/ts"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      # Group all dev updates (vitest, msw, tsx, typescript, etc.)
+      # into a single weekly PR so reviewers see one diff.
+      npm-dev:
+        dependency-type: "development"
+        patterns:
+          - "*"
+      # Runtime deps in one PR too. Splitting dev/runtime is
+      # optional — the weekly cadence keeps either PR small.
+      npm-prod:
+        dependency-type: "production"
+        patterns:
+          - "*"
+
+    # Pnpm 11.10.0 is the version pinned in package.json — keep
+    # Dependabot from silently bumping the packageManager field.
+    ignore:
+      - dependency-name: "pnpm"
