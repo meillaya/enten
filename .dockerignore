@@ -1,0 +1,33 @@
+# Build artifacts and caches
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+coverage/
+.tsbuildinfo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Git and OMC runtime state
+.git/
+.gitignore
+.github/
+.omc/
+.omo/
+.omx/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store

@@ -1,0 +1,7 @@
+[build]
+buildCommand = "uv sync"
+
+[deploy]
+startCommand = "uv run enten worker & node packages/ts/app/dist/server.js & wait"
+healthcheckPath = "/health"
+healthcheckTimeout = 30

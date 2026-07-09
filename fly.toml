@@ -1,0 +1,49 @@
+app = "enten-ai"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATABASE_URL = ""
+  OTEL_ENDPOINT = "http://otel-collector.internal:4317"
+  SANDBOX_PROVIDER = "e2b"
+  LLM_PROVIDER = "openai-compat"
+  PORT = "3000"
+  METRICS_PORT = "9090"
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+    force_https = true
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/health"
+    port = 3000
+
+[[services]]
+  internal_port = 9090
+  protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  # Internal metrics port — no public [[services.ports]] block.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

@@ -76,21 +76,15 @@ services:
       retries: 10
       start_period: 5s
 
-  # ─── app (placeholder until T40) ─────────────────────────────────────
-  # T40: replace `image: busybox` with `build: .` once the production
-  # Dockerfile lands. The `profiles: ["app"]` line keeps this service
-  # out of `docker compose up` (no implicit start); bring it up
-  # explicitly with `docker compose --profile app up app`.
+  # ─── app (production image, T40) ─────────────────────────────────────
+  # Built from the repo-root Dockerfile. The `profiles: ["app"]` line
+  # keeps this service out of `docker compose up` (no implicit start);
+  # bring it up explicitly with `docker compose --profile app up app`.
   app:
-    image: busybox
+    build: .
     container_name: enten-app
     profiles: ["app"]
-    command: ["sleep", "infinity"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      jaeger:
-        condition: service_healthy
+    depends_on: [postgres, jaeger]
 
   # ─── Ollama (optional, opt-in) ───────────────────────────────────────
   # Pull a model on first start with:
