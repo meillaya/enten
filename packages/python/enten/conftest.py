@@ -21,7 +21,6 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-
 # ─── Optional imports — guarded so this conftest does not hard-require
 # testcontainers at collection time. The fixtures are still defined;
 # importing the module only happens at fixture-instantiation time.
@@ -68,7 +67,10 @@ async def db_session(postgres_container: Any) -> Generator[Any, None, None]:
     import asyncpg
 
     raw_url = postgres_container.get_connection_url()
-    dsn = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # testcontainers may return a psycopg2-schemed URL; asyncpg needs the
+    # plain ``postgresql`` scheme, while SQLAlchemy needs ``postgresql+asyncpg``.
+    dsn = raw_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    raw_url = raw_url.replace("postgresql+psycopg2://", "postgresql://", 1)
 
     conn = await asyncpg.connect(dsn=raw_url)
     try:
