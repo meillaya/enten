@@ -1,0 +1,27 @@
+{
+  "numPassedTests": 3,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "testResults": [
+    {
+      "name": "add > adds two numbers",
+      "status": "passed",
+      "duration": 1,
+      "failureMessages": [],
+      "file": "math.test.ts",
+      "line": 4
+    },
+    {
+      "name": "sub > subtracts",
+      "status": "passed",
+      "duration": 2,
+      "failureMessages": []
+    },
+    {
+      "name": "mul > multiplies",
+      "status": "passed",
+      "duration": 1,
+      "failureMessages": []
+    }
+  ]
+}

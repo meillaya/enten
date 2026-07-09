@@ -1,0 +1,10 @@
+[
+  {
+    "File": "config/aws.env",
+    "RuleID": "aws-access-key-id",
+    "StartLine": 2,
+    "EndLine": 2,
+    "Match": "AKIAIOSFODNN7EXAMPLE",
+    "Secret": "AKIAIOSFODNN7EXAMPLE"
+  }
+]

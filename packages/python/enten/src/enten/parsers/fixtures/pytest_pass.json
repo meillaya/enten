@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "error": 0,
+    "total": 2,
+    "duration": 0.123
+  },
+  "tests": [
+    {
+      "nodeid": "test_demo.py::test_one",
+      "outcome": "passed",
+      "duration": 0.05,
+      "lineno": 3
+    },
+    {
+      "nodeid": "test_demo.py::test_two",
+      "outcome": "passed",
+      "duration": 0.07,
+      "lineno": 6
+    }
+  ]
+}

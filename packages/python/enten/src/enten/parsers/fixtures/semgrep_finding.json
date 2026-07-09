@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.eval-detected",
+      "path": "src/app.py",
+      "start": {
+        "line": 10
+      },
+      "end": {
+        "line": 10
+      },
+      "extra": {
+        "message": "Detected use of eval",
+        "severity": "ERROR"
+      }
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,27 @@
+{
+  "summary": {
+    "passed": 1,
+    "failed": 1,
+    "skipped": 0,
+    "error": 0,
+    "total": 2,
+    "duration": 0.234
+  },
+  "tests": [
+    {
+      "nodeid": "test_demo.py::test_ok",
+      "outcome": "passed",
+      "duration": 0.05,
+      "lineno": 3
+    },
+    {
+      "nodeid": "test_demo.py::test_bad",
+      "outcome": "failed",
+      "duration": 0.08,
+      "lineno": 6,
+      "call": {
+        "longrepr": "assert 1 == 2"
+      }
+    }
+  ]
+}
