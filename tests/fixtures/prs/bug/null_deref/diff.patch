@@ -1,0 +1,8 @@
+--- a/src/users.py
++++ b/src/users.py
+@@ -10,6 +10,8 @@
+ def greet(user_id):
+     user = get_user(user_id)
++    if user is None:
++        return "Unknown user"
+     return f"Hello, {user.name}"

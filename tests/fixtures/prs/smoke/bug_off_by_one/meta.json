@@ -1,0 +1,4 @@
+{
+  "kind": "bug",
+  "description": "Synthetic off-by-one list slicing bug."
+}

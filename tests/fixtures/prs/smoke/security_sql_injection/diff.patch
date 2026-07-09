@@ -1,0 +1,9 @@
+--- a/src/db.py
++++ b/src/db.py
+@@ -12,8 +12,8 @@
+ def search_users(name):
+     conn = get_conn()
+-    query = f"SELECT * FROM users WHERE name = '{name}'"
+-    return conn.execute(query)
++    query = "SELECT * FROM users WHERE name = ?"
++    return conn.execute(query, (name,))

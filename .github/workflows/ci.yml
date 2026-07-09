@@ -164,3 +164,54 @@ jobs:
             packages/ts/app/coverage
           retention-days: 7
           if-no-files-found: ignore
+
+  python-eval-smoke:
+    name: python eval smoke (3 fixtures / stub LLM)
+    runs-on: ubuntu-latest
+    needs: python-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-3.12-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-3.12-
+            uv-${{ runner.os }}-
+
+      - name: Sync workspace deps
+        run: uv sync --extra test
+
+      - name: Run eval smoke corpus
+        run: |
+          uv run enten eval --corpus tests/fixtures/prs/smoke --report eval-smoke.json --stub-llm
+
+      - name: Check eval thresholds
+        run: |
+          python scripts/eval-threshold-check.py eval-smoke.json
+        env:
+          EVAL_PRECISION_MIN: "0.5"
+          EVAL_RECALL_MIN: "0.5"
+          EVAL_FPR_MAX: "0.5"
+
+      - name: Upload eval smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-smoke-report
+          path: eval-smoke.json
+          retention-days: 7
+          if-no-files-found: ignore

@@ -1,0 +1,13 @@
+--- a/src/pricing.py
++++ b/src/pricing.py
+@@ -1,4 +1,9 @@
+ def apply_discount(price, percent):
++    if percent < 0 or percent > 100:
++        raise ValueError("Invalid discount percent")
++    return price * (1 - percent / 100.0)
++
++
++def bulk_discount(prices, percent):
+     if percent < 0 or percent > 100:
+         raise ValueError("Invalid discount percent")
+     return price * (1 - percent / 100.0)

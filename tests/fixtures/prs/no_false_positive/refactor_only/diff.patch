@@ -1,0 +1,13 @@
+--- a/src/process.py
++++ b/src/process.py
+@@ -8,12 +8,15 @@
++def _normalize(value):
++    return value.strip().lower()
++
+ def run(items):
+     results = []
+     for item in items:
+-        cleaned = item.strip().lower()
++        cleaned = _normalize(item)
+         results.append(cleaned)
+     return results

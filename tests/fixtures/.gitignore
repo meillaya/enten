@@ -8,4 +8,5 @@
 !*.gitignore
 !*.gitkeep
 !*.json
+!*.patch
 *.tar.gz

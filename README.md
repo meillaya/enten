@@ -1,6 +1,7 @@
 # enten
 
 [![CI](https://github.com/<owner>/enten/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/enten/actions/workflows/ci.yml)
+[![Eval Smoke](https://github.com/<owner>/enten/actions/workflows/ci.yml/badge.svg?job=python-eval-smoke)](https://github.com/<owner>/enten/actions/workflows/ci.yml)
 
 Status: 🚧 under construction
 

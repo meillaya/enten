@@ -1,0 +1,9 @@
+[
+  {
+    "category": "bug",
+    "severity": "high",
+    "file": "src/x.py",
+    "line": 42,
+    "rationale": "Off-by-one error in list slicing excludes the nth element; the patch corrects items[:n-1] to items[:n]."
+  }
+]

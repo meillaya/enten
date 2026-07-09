@@ -1,0 +1,8 @@
+--- a/src/x.py
++++ b/src/x.py
+@@ -39,7 +39,7 @@
+ def top_n(items, n):
+     if not items:
+         return []
+-    return items[:n - 1]
++    return items[:n]

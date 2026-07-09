@@ -1,0 +1,8 @@
+--- a/src/config.py
++++ b/src/config.py
+@@ -1,5 +1,5 @@
+ import os
+
+-AWS_ACCESS_KEY_ID = "AKIA0000000000000000"
++AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+ AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")

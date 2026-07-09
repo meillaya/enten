@@ -1,0 +1,8 @@
+--- a/src/checkout.py
++++ b/src/checkout.py
+@@ -5,6 +5,8 @@
+ def add_item(cart, item):
++    if item.price < 0:
++        raise ValueError("Price must be non-negative")
+     cart.items.append(item)
+     cart.total += item.price
