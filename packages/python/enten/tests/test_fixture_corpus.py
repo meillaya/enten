@@ -73,7 +73,7 @@ def test_fixture_meta_schema(fixtures: list[Path]) -> None:
 
 def test_fixture_expected_findings_shape(fixtures: list[Path]) -> None:
     """expected_findings.json must be a list of findings with required keys."""
-    required_finding_fields = {"category", "severity", "file", "line", "rationale"}
+    required_finding_fields = {"category", "severity", "file", "line", "message"}
     for fixture in fixtures:
         findings = json.loads((fixture / "expected_findings.json").read_text())
         assert isinstance(findings, list), f"{fixture} expected_findings is not a list"

@@ -20,7 +20,7 @@ def _make_fixture(
     stub_findings: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Create a synthetic fixture directory under ``root``."""
-    fixture_dir = root / name
+    fixture_dir = root / kind / name
     fixture_dir.mkdir(parents=True)
 
     diff_text = (
