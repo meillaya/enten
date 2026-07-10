@@ -1,0 +1,18 @@
+=== CREATE EXTENSION vector ===
+CREATE EXTENSION
+exit: 0
+
+=== SELECT extname FROM pg_extension WHERE extname='vector' ===
+ extname 
+---------
+ vector
+(1 row)
+
+exit: 0
+
+=== Version check (pgvector) ===
+ extname | extversion 
+---------+------------
+ vector  | 0.8.5
+(1 row)
+

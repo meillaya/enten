@@ -1,0 +1,42 @@
+=== Final canonical verification ===
+2026-07-09T13:01:19-04:00
+
+--- 1. docker compose up -d --wait postgres jaeger ---
+ Network enten_default Creating 
+ Network enten_default Created 
+ Volume enten-pgdata Creating 
+ Volume enten-pgdata Created 
+ Container enten-postgres Creating 
+ Container enten-jaeger Creating 
+ Container enten-jaeger Created 
+ Container enten-postgres Created 
+ Container enten-jaeger Starting 
+ Container enten-postgres Starting 
+ Container enten-jaeger Started 
+ Container enten-postgres Started 
+ Container enten-postgres Waiting 
+ Container enten-jaeger Waiting 
+ Container enten-postgres Healthy 
+ Container enten-jaeger Healthy 
+exit: 0
+
+--- 2. docker compose ps ---
+NAME             IMAGE                           COMMAND                  SERVICE    CREATED         STATUS                   PORTS
+enten-jaeger     jaegertracing/all-in-one:1.55   "/go/bin/all-in-one-…"   jaeger     6 seconds ago   Up 5 seconds (healthy)   5775/udp, 5778/tcp, 9411/tcp, 14250/tcp, 0.0.0.0:4317-4318->4317-4318/tcp, [::]:4317-4318->4317-4318/tcp, 0.0.0.0:16686->16686/tcp, [::]:16686->16686/tcp, 6831-6832/udp, 14268/tcp
+enten-postgres   pgvector/pgvector:pg16          "docker-entrypoint.s…"   postgres   6 seconds ago   Up 5 seconds (healthy)   0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp
+
+--- 3. curl -fsS http://localhost:16686/api/services (HTTP code expected: 200) ---
+HTTP code: 200
+{"data":null,"total":0,"limit":0,"offset":0,"errors":null}
+--- 4. CREATE EXTENSION vector ---
+CREATE EXTENSION
+exit: 0
+
+--- 5. SELECT extname FROM pg_extension WHERE extname='vector' ---
+ extname 
+---------
+ vector
+(1 row)
+
+exit: 0
+

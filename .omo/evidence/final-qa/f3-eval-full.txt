@@ -1,0 +1,2 @@
+Eval error: corpus has 0 fixtures: tests/fixtures/prs/
+EXIT=1

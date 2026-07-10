@@ -1,0 +1,41 @@
+=== Cold start: bash scripts/dev-up.sh ===
+2026-07-09T12:59:03-04:00
+dev-up: starting postgres jaeger (dev=0, app=0, ollama=0)
+ Network enten_default Creating 
+ Network enten_default Created 
+ Volume enten-pgdata Creating 
+ Volume enten-pgdata Created 
+ Container enten-postgres Creating 
+ Container enten-jaeger Creating 
+ Container enten-postgres Created 
+ Container enten-jaeger Created 
+ Container enten-jaeger Starting 
+ Container enten-postgres Starting 
+ Container enten-jaeger Started 
+ Container enten-postgres Started 
+ Container enten-postgres Waiting 
+ Container enten-jaeger Waiting 
+ Container enten-postgres Healthy 
+ Container enten-jaeger Healthy 
+jq: error (at <stdin>:1): Cannot index string with string "Health"
+jq: error (at <stdin>:2): Cannot index string with string "Health"
+exit: 5
+
+=== Status check ===
+NAME             IMAGE                           COMMAND                  SERVICE    CREATED         STATUS                   PORTS
+enten-jaeger     jaegertracing/all-in-one:1.55   "/go/bin/all-in-one-…"   jaeger     6 seconds ago   Up 5 seconds (healthy)   5775/udp, 5778/tcp, 9411/tcp, 14250/tcp, 0.0.0.0:4317-4318->4317-4318/tcp, [::]:4317-4318->4317-4318/tcp, 0.0.0.0:16686->16686/tcp, [::]:16686->16686/tcp, 6831-6832/udp, 14268/tcp
+enten-postgres   pgvector/pgvector:pg16          "docker-entrypoint.s…"   postgres   6 seconds ago   Up 5 seconds (healthy)   0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp
+
+=== pgvector still installed (from previous run? no, volume was dropped) ===
+ extname 
+---------
+(0 rows)
+
+
+=== Re-create extension after fresh start ===
+CREATE EXTENSION
+ extname | extversion 
+---------+------------
+ vector  | 0.8.5
+(1 row)
+

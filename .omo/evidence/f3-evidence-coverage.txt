@@ -1,0 +1,62 @@
+F3 — Evidence Coverage Check
+==============================
+Date: 2026-07-09
+Reviewer: Final Wave F3 (Real Manual QA)
+
+Scope: For each of the 42 implementation tasks, verify that at least one
+.omo/evidence/task-{N}-*.txt exists.
+
+RESULT: 2/42 tasks have evidence files (4.8%).
+
+Coverage table:
+  T01: MISSING
+  T02: YES  (task-2-all-verify.txt)
+  T03: MISSING
+  T04: MISSING
+  T05: YES  (task-5-typecheck.txt)
+  T06: MISSING
+  T07: MISSING
+  T08: MISSING
+  T09: MISSING
+  T10: MISSING
+  T11: MISSING
+  T12: MISSING
+  T13: MISSING
+  T14: MISSING
+  T15: MISSING
+  T16: MISSING
+  T17: MISSING
+  T18: MISSING
+  T19: MISSING
+  T20: MISSING
+  T21: MISSING
+  T22: MISSING
+  T23: MISSING
+  T24: MISSING
+  T25: MISSING
+  T26: MISSING
+  T27: MISSING
+  T28: MISSING
+  T29: MISSING
+  T30: MISSING
+  T31: MISSING
+  T32: MISSING
+  T33: MISSING
+  T34: MISSING
+  T35: MISSING
+  T36: MISSING
+  T37: MISSING
+  T38: MISSING
+  T39: MISSING
+  T40: MISSING
+  T41: MISSING
+  T42: MISSING
+
+Plan-completion cross-check (.omo/plans/ai-engineering-agent.md, summary
+view lines 280-321): 14/42 tasks marked [x] — but boulder.json's
+task_sessions tracks only 10 (6 marked completed). Evidence files are
+required for ANY of the 42 tasks; they are not present.
+
+Conclusion: Task evidence is the leading indicator of "claimed but not
+proven". The team should not claim implementation complete without at
+least one reproducible evidence file per task.

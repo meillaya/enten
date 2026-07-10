@@ -1,0 +1,155 @@
+F1: Plan Compliance Audit — Final Verdict
+==========================================
+Audit timestamp: 2026-07-09
+Auditor: oracle (read-only)
+Plan: /home/mei/projects/enten/.omo/plans/ai-engineering-agent.md
+
+============================================================
+FINAL SCORE
+============================================================
+Must Have     [11/12] PASS — MH12 FAIL (Python coverage 78.78% < 80%)
+Must NOT Have [10/10] PASS
+Tasks         [42/42 claimed complete]
+Evidence      [17/50]  FAIL (33 short of threshold)
+
+============================================================
+VERDICT: REJECT
+============================================================
+
+REASON 1 (BLOCKER): MH12 — Test coverage gate violation
+  - Plan Definition of Done line 119:
+      "`pytest` + `vitest --coverage` both show ≥ 80% on `src/enten/`"
+  - Plan Must Have #12:
+      "TDD for deterministic code; eval for LLM quality; coverage ≥ 80%"
+  - Measured Python coverage: 78.78% (FAIL by 1.22 percentage points)
+  - Measured TypeScript coverage: 99.2% (PASS)
+  - Failure hotspots in Python:
+      cli.py (0%), worker.py (33%), indexer/__main__.py (0%),
+      indexer/cli.py (0%), embeddings/_factory.py (31%)
+  - The 80% threshold is non-negotiable per DoD; this is a hard fail.
+
+REASON 2 (BLOCKER): Evidence shortfall against QA Policy
+  - Plan QA Policy line 169:
+      "Every task MUST include agent-executed QA scenarios (see TODO
+       template). Evidence saved to `.omo/evidence/task-{N}-{slug}.{ext}`."
+  - Threshold required by F1 brief: ≥ 50 task-*.txt files
+  - Actual count: 17 task-*.txt files
+  - Tasks with on-disk evidence: only T02 (14 files) and T05 (3 files)
+  - Tasks missing evidence: 40 of 42
+  - 33 files short of the 50-file threshold.
+
+============================================================
+DETAILED FINDINGS — MUST HAVE
+============================================================
+[ PASS ] MH1  Determinism guarantee
+            verify.py is LLM-free; exit-code arbiter.
+            Cite: verification/verify.py:1-5 docstring; no LLM imports.
+[ PASS ] MH2  Patch safety
+            patch/ is sandbox-only; never accepts owner/repo/branch.
+            Cite: patch/__init__.py:1-7, 193-195; no github API calls.
+[ PASS ] MH3  Prompt injection defense
+            <untrusted-{boundary}> wrappers + output validation.
+            Cite: llm/injection.py:32-39 wrap_untrusted function.
+[ PASS ] MH4  Eval harness + 10+ fixtures
+            eval/__init__.py (15.4KB) + 13 fixtures
+            (10 main: bug×3, security×2, no_fp×2, prompt_inj×1,
+             missing_test×2; + 3 smoke fixtures).
+[ PASS ] MH5  Cost tracking per PR
+            llm_calls table populated; cost_usd on PRReview.
+            Cite: queue/models.py:48, 63-74; llm/client.py:46-47, 105-112,
+            308-344.
+[ PASS ] MH6  Idempotency
+            Webhook idempotency_key with UNIQUE constraint.
+            Cite: queue/__init__.py:73-89; queue/models.py:34.
+[ PASS ] MH7  Observability
+            One OTel "pr_review" span per PR review.
+            Cite: worker.py:162 _tracer().start_as_current_span("pr_review").
+[ PASS ] MH8  2 LLM implementations
+            OpenAICompatProvider (openai_compat.py:37) +
+            OllamaProvider (ollama.py:30). Anthropic via OpenRouter
+            (llm/client.py:67).
+[ PASS ] MH9  2 sandbox implementations
+            DockerSandbox (sandbox/docker.py:25) +
+            E2BSandbox (sandbox/e2b.py:24). No Daytona.
+[ PASS ] MH10 Flaky test handling
+            run_with_flaky_check with default runs=3.
+            Cite: verification/flaky.py:61-66.
+[ PASS ] MH11 Bot ignores own PRs
+            is_bot_pr(pr, settings) checks user.login + head_repo owner.
+            Cite: github/bot_self.py:15-29 + 3 tests.
+[FAIL ] MH12 Coverage ≥ 80%
+            Python 78.78% (FAIL); TS 99.2% (PASS).
+            Run: bash scripts/check-coverage.sh
+            Output: "FAIL Required test coverage of 80% not reached.
+                     Total coverage: 78.78%"
+
+============================================================
+DETAILED FINDINGS — MUST NOT HAVE
+============================================================
+[ PASS ] MNH1  No contents: write
+              grep -rn 'contents: write' packages/  → 0
+[ PASS ] MNH2  No Daytona
+              grep -rn 'Daytona' packages/  → 0
+[ PASS ] MNH3  No secrets in evidence
+              grep -rn 'LANGCHAIN|GITHUB_TOKEN|OPENAI' .omo/evidence/  → 0
+[ PASS ] MNH4  No LLM in arbiter
+              grep -rnE 'console\.log|print\(.*Hello' verification/  → 0
+              Also: no LLMProvider/llm_client/client.complete in verify.py
+[ PASS ] MNH5  No over-fancy slop
+              grep -rn 'over-fancy' packages/  → 0
+[ PASS ] MNH6  No multi-tenant auth / billing
+              grep -rin 'tenant|billing|subscription|tenant_id' src/  → 0
+[ PASS ] MNH7  No web dashboard / admin UI
+              find packages -name '*.tsx' -o -name '*.jsx'  → 0 files
+              find packages -type d -name ui -o -name dashboard  → 0 dirs
+[ PASS ] MNH8  No LLM fine-tuning
+              grep -rin 'fine.tun|finetune|lora|qlora|train.*llm'  → 0
+[ PASS ] MNH9  No LLM implementations beyond 2
+              Concrete providers: OpenAICompat + Ollama. StubProvider
+              excluded (test-only). Count = 2.
+[ PASS ] MNH10 No more than 2 sandbox backends
+              Concrete sandboxes: Docker + E2B. Count = 2.
+
+============================================================
+EVIDENCE FILES
+============================================================
+task-*.txt count:                    17
+Required:                            50
+SHORTFALL:                           33
+
+Tasks with evidence:                 2 of 42 (T02: 14 files; T05: 3 files)
+Tasks without evidence:             40 of 42
+
+Per QA Policy (line 169), every task must have QA evidence. The 40
+missing tasks represent 95% of the plan with no on-disk QA artifact.
+
+============================================================
+BOTTOM LINE
+============================================================
+Two hard, unambiguous blockers prevent APPROVAL:
+
+1. Python coverage is 78.78%, missing the 80% gate by 1.22pp. The
+   primary drags are cli.py (0%) and worker.py (33%). MH12 and DoD
+   line 119 require ≥ 80%.
+
+2. Only 17 of the required 50 evidence files exist. 40 of 42 tasks
+   have no QA evidence on disk, violating the QA Policy at line 169.
+
+Neither blocker is subjective. Both are objective, measurable gaps
+against explicit plan requirements.
+
+STATUS: REJECT — fix both blockers before re-audit.
+  - Add coverage for cli.py and worker.py (the two largest 0%/33%
+    files) to push Python coverage above 80%.
+  - Generate per-task QA evidence files for T01-T42 (40 tasks missing).
+
+Re-audit should re-run scripts/check-coverage.sh and
+`ls .omo/evidence/task-*.txt | wc -l` after fixes.
+
+============================================================
+EVIDENCE FILES PRODUCED BY THIS AUDIT
+============================================================
+.omo/evidence/f1-must-have.txt         — 12 Must Have items with file:line
+.omo/evidence/f1-must-not-have.txt     — 10 Must NOT Have items with grep
+.omo/evidence/f1-evidence-count.txt    — per-task evidence file breakdown
+.omo/evidence/f1-verdict.txt           — this file

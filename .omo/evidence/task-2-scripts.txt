@@ -1,0 +1,70 @@
+=== docker compose down -v ===
+2026-07-09T13:01:30-04:00
+ Container enten-jaeger Stopping 
+ Container enten-postgres Stopping 
+ Container enten-jaeger Stopped 
+ Container enten-jaeger Removing 
+ Container enten-postgres Stopped 
+ Container enten-postgres Removing 
+ Container enten-jaeger Removed 
+ Container enten-postgres Removed 
+ Volume enten-pgdata Removing 
+ Network enten_default Removing 
+ Volume enten-pgdata Removed 
+ Network enten_default Removed 
+exit: 0
+
+--- after down: ps (should be empty) ---
+NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS
+
+--- volumes (should NOT include enten-pgdata) ---
+no enten volumes
+
+=== bash scripts/dev-up.sh (cold start) ===
+dev-up: starting postgres jaeger (dev=0, app=0, ollama=0)
+ Network enten_default Creating 
+ Network enten_default Created 
+ Volume enten-pgdata Creating 
+ Volume enten-pgdata Created 
+ Container enten-postgres Creating 
+ Container enten-jaeger Creating 
+ Container enten-postgres Created 
+ Container enten-jaeger Created 
+ Container enten-postgres Starting 
+ Container enten-jaeger Starting 
+ Container enten-jaeger Started 
+ Container enten-postgres Started 
+ Container enten-postgres Waiting 
+ Container enten-jaeger Waiting 
+ Container enten-postgres Healthy 
+ Container enten-jaeger Healthy 
+  enten-jaeger: running (healthy)
+  enten-postgres: running (healthy)
+dev-up: ready
+  Postgres:  postgresql://enten:enten@localhost:5432/enten
+  Jaeger UI: http://localhost:16686
+  OTLP:      http://localhost:4317 (gRPC)  http://localhost:4318 (HTTP)
+exit: 0
+
+=== bash scripts/dev-down.sh ===
+dev-down: stopping all services (drop volume: -v)
+ Container enten-postgres Stopping 
+ Container enten-jaeger Stopping 
+ Container enten-jaeger Stopped 
+ Container enten-jaeger Removing 
+ Container enten-postgres Stopped 
+ Container enten-postgres Removing 
+ Container enten-jaeger Removed 
+ Container enten-postgres Removed 
+ Volume enten-pgdata Removing 
+ Network enten_default Removing 
+ Volume enten-pgdata Removed 
+ Network enten_default Removed 
+dev-down: done
+exit: 0
+
+--- after dev-down.sh: ps (should be empty) ---
+NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS
+
+--- volumes after dev-down.sh ---
+no enten volumes

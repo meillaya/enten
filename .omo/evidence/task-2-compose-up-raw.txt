@@ -1,0 +1,161 @@
+ Image pgvector/pgvector:pg16 Pulling 
+ Image jaegertracing/all-in-one:1.55 Pulling 
+ 83c1fe186846 Pulling fs layer 0B
+ ddb7f4faf823 Pulling fs layer 0B
+ 9977b0b594c4 Pulling fs layer 0B
+ 63e65dfe75a7 Pulling fs layer 0B
+ a88dc8b54e91 Pulling fs layer 0B
+ 917c1c628740 Pulling fs layer 0B
+ 870f22c135c1 Pulling fs layer 0B
+ 7b66c0a82cb1 Pulling fs layer 0B
+ 68629629b516 Pulling fs layer 0B
+ c08a8fef47b5 Pulling fs layer 0B
+ 11bb405b3d26 Pulling fs layer 0B
+ cc9adae34346 Pulling fs layer 0B
+ 65a3bbd5eb66 Pulling fs layer 0B
+ 41297627cf85 Pulling fs layer 0B
+ cc6107e54361 Pulling fs layer 0B
+ f1c1c19fbf7f Pulling fs layer 0B
+ 612502b9ebdb Pulling fs layer 0B
+ 2b067480292d Pulling fs layer 0B
+ a27863b3f8d2 Pulling fs layer 0B
+ ff38c5d8ae68 Pulling fs layer 0B
+ c13bbcdab63c Pulling fs layer 0B
+ 870f22c135c1 Download complete 0B
+ a88dc8b54e91 Downloading 1.049MB
+ 9977b0b594c4 Downloading 20.2kB
+ 83c1fe186846 Downloading 229B
+ ddb7f4faf823 Downloading 123.6kB
+ 11bb405b3d26 Download complete 0B
+ cc6107e54361 Downloading 116B
+ 7b66c0a82cb1 Downloading 5.243MB
+ c08a8fef47b5 Download complete 0B
+ f1c1c19fbf7f Downloading 9.972kB
+ 83c1fe186846 Download complete 0B
+ ddb7f4faf823 Download complete 0B
+ a88dc8b54e91 Download complete 0B
+ 9977b0b594c4 Download complete 0B
+ 63e65dfe75a7 Downloading 2.097MB
+ a88dc8b54e91 Extracting 1B
+ 68629629b516 Downloading 1.049MB
+ 917c1c628740 Download complete 0B
+ 2b067480292d Download complete 0B
+ cc6107e54361 Download complete 0B
+ 7b66c0a82cb1 Download complete 0B
+ f1c1c19fbf7f Download complete 0B
+ cc9adae34346 Download complete 0B
+ 65a3bbd5eb66 Downloading 1.049MB
+ c13bbcdab63c Download complete 0B
+ a27863b3f8d2 Download complete 0B
+ 41297627cf85 Downloading 1.049MB
+ 612502b9ebdb Download complete 0B
+ 63e65dfe75a7 Downloading 5.243MB
+ a88dc8b54e91 Extracting 1B
+ 68629629b516 Downloading 3.146MB
+ ff38c5d8ae68 Downloading 1.049MB
+ 65a3bbd5eb66 Download complete 0B
+ 41297627cf85 Downloading 3.146MB
+ 63e65dfe75a7 Downloading 8.389MB
+ ddb7f4faf823 Pull complete 0B
+ a88dc8b54e91 Pull complete 0B
+ 9977b0b594c4 Extracting 1B
+ 68629629b516 Downloading 8.389MB
+ b15a3388b99f Download complete 0B
+ ff38c5d8ae68 Downloading 3.146MB
+ 41297627cf85 Download complete 0B
+ 63e65dfe75a7 Downloading 13.63MB
+ dac1aa5d5e6e Download complete 0B
+ 9977b0b594c4 Pull complete 0B
+ 68629629b516 Downloading 12.58MB
+ ff38c5d8ae68 Downloading 6.291MB
+ 63e65dfe75a7 Downloading 17.83MB
+ 68629629b516 Downloading 17.83MB
+ ff38c5d8ae68 Downloading 8.389MB
+ 63e65dfe75a7 Downloading 22.02MB
+ ff38c5d8ae68 Downloading 11.53MB
+ 68629629b516 Downloading 22.02MB
+ 63e65dfe75a7 Downloading 26.21MB
+ ff38c5d8ae68 Downloading 13.63MB
+ 68629629b516 Downloading 27.26MB
+ 63e65dfe75a7 Downloading 29.36MB
+ 68629629b516 Download complete 0B
+ ff38c5d8ae68 Downloading 17.83MB
+ 63e65dfe75a7 Download complete 0B
+ 63e65dfe75a7 Extracting 1B
+ 68629629b516 Extracting 1B
+ ff38c5d8ae68 Downloading 23.07MB
+ 63e65dfe75a7 Extracting 1B
+ 68629629b516 Extracting 1B
+ ff38c5d8ae68 Downloading 31.46MB
+ 63e65dfe75a7 Extracting 1B
+ 68629629b516 Extracting 1B
+ ff38c5d8ae68 Downloading 41.94MB
+ 63e65dfe75a7 Extracting 1B
+ 68629629b516 Extracting 1B
+ ff38c5d8ae68 Downloading 53.48MB
+ 63e65dfe75a7 Extracting 1B
+ 68629629b516 Extracting 1B
+ 83c1fe186846 Pull complete 0B
+ 63e65dfe75a7 Pull complete 0B
+ Image jaegertracing/all-in-one:1.55 Pulled 
+ ff38c5d8ae68 Downloading 63.96MB
+ 68629629b516 Extracting 1B
+ ff38c5d8ae68 Downloading 76.55MB
+ 68629629b516 Extracting 1B
+ ff38c5d8ae68 Downloading 86.62MB
+ 68629629b516 Pull complete 0B
+ ff38c5d8ae68 Downloading 98.57MB
+ 870f22c135c1 Pull complete 0B
+ 41297627cf85 Extracting 1B
+ ff38c5d8ae68 Downloading 110.1MB
+ 65a3bbd5eb66 Pull complete 0B
+ 41297627cf85 Pull complete 0B
+ 7b66c0a82cb1 Extracting 1B
+ ff38c5d8ae68 Download complete 0B
+ 7b66c0a82cb1 Pull complete 0B
+ cc6107e54361 Pull complete 0B
+ cc9adae34346 Pull complete 0B
+ 612502b9ebdb Pull complete 0B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 1B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ ff38c5d8ae68 Extracting 2B
+ 11bb405b3d26 Pull complete 0B
+ c08a8fef47b5 Extracting 1B
+ f1c1c19fbf7f Pull complete 0B
+ ff38c5d8ae68 Pull complete 0B
+ c08a8fef47b5 Pull complete 0B
+ 917c1c628740 Extracting 1B
+ 2b067480292d Pull complete 0B
+ c13bbcdab63c Pull complete 0B
+ a27863b3f8d2 Pull complete 0B
+ 917c1c628740 Pull complete 0B
+ Image pgvector/pgvector:pg16 Pulled 
+ Network enten_default Creating 
+ Network enten_default Created 
+ Volume enten-pgdata Creating 
+ Volume enten-pgdata Created 
+ Container enten-postgres Creating 
+ Container enten-jaeger Creating 
+ Container enten-postgres Created 
+ Container enten-jaeger Created 
+ Container enten-jaeger Starting 
+ Container enten-postgres Starting 
+ Container enten-jaeger Started 
+Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint enten-postgres (3fb9dd2979df6bd0dfd3245b346de19c89bb64061eb78ad57cd0c1789ebc3d4d): Bind for 0.0.0.0:5432 failed: port is already allocated

@@ -1,0 +1,19 @@
+ enten-postgres Copying migrations/0001_init.sql to enten-postgres:/workspace/migrations/0001_init.sql
+ enten-postgres Copied migrations/0001_init.sql to enten-postgres:/workspace/migrations/0001_init.sql
+CREATE EXTENSION
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+ enten-postgres Copying migrations/0002_pgvector.sql to enten-postgres:/workspace/migrations/0002_pgvector.sql
+ enten-postgres Copied migrations/0002_pgvector.sql to enten-postgres:/workspace/migrations/0002_pgvector.sql
+CREATE SCHEMA
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX

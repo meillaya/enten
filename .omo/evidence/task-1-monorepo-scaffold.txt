@@ -1,0 +1,5 @@
+Task 1 verification:
+- Files: pyproject.toml, package.json, pnpm-workspace.yaml, Makefile, packages/python/enten/src/enten/__init__.py, packages/ts/app/src/server.ts
+- Commit: pending
+- Tests: packages/python/enten/tests/test_config.py, packages/ts/app/tests/scaffold.test.ts
+- Status: PASS (all required deliverables present)

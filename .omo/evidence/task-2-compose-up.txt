@@ -1,0 +1,153 @@
+=== Cold start: docker compose up -d --wait postgres jaeger ===
+2026-07-09T12:58:46-04:00
+ Container enten-postgres Running 
+ Container enten-jaeger Running 
+ Container enten-postgres Waiting 
+ Container enten-jaeger Waiting 
+ Container enten-jaeger Healthy 
+ Container enten-postgres Healthy 
+exit: 0
+
+=== docker compose ps ===
+NAME             IMAGE                           COMMAND                  SERVICE    CREATED          STATUS                   PORTS
+enten-jaeger     jaegertracing/all-in-one:1.55   "/go/bin/all-in-one-…"   jaeger     10 seconds ago   Up 9 seconds (healthy)   5775/udp, 5778/tcp, 9411/tcp, 14250/tcp, 0.0.0.0:4317-4318->4317-4318/tcp, [::]:4317-4318->4317-4318/tcp, 0.0.0.0:16686->16686/tcp, [::]:16686->16686/tcp, 6831-6832/udp, 14268/tcp
+enten-postgres   pgvector/pgvector:pg16          "docker-entrypoint.s…"   postgres   10 seconds ago   Up 9 seconds (healthy)   0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp
+
+=== docker compose ps --format json ===
+{
+  "Command": "\"/go/bin/all-in-one-…\"",
+  "CreatedAt": "2026-07-09 12:58:37 -0400 EDT",
+  "ExitCode": 0,
+  "Health": "healthy",
+  "ID": "40ecd9e2089b",
+  "Image": "jaegertracing/all-in-one:1.55",
+  "Labels": "com.docker.compose.depends_on=,com.docker.compose.project.working_dir=/home/mei/projects/enten,com.docker.compose.version=5.2.0,com.docker.compose.image=sha256:f6b5d09073f14f76873d300f565a6691d815e81bea8e07e1dc3ff67e0596dd4e,com.docker.compose.oneoff=False,com.docker.compose.project=enten,com.docker.compose.project.config_files=/home/mei/projects/enten/docker-compose.yml,com.docker.compose.service=jaeger,com.docker.compose.config-hash=6b168105a9f3b586b6cf32953ba040adf3a9f8cfdfe13fa4510f88357b9c0030,com.docker.compose.container-number=1",
+  "LocalVolumes": "1",
+  "Mounts": "3353fd4efa79de…",
+  "Name": "enten-jaeger",
+  "Names": "enten-jaeger",
+  "Networks": "enten_default",
+  "Ports": "5775/udp, 5778/tcp, 9411/tcp, 14250/tcp, 0.0.0.0:4317-4318->4317-4318/tcp, [::]:4317-4318->4317-4318/tcp, 0.0.0.0:16686->16686/tcp, [::]:16686->16686/tcp, 6831-6832/udp, 14268/tcp",
+  "Project": "enten",
+  "Publishers": [
+    {
+      "URL": "0.0.0.0",
+      "TargetPort": 4317,
+      "PublishedPort": 4317,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "::",
+      "TargetPort": 4317,
+      "PublishedPort": 4317,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "::",
+      "TargetPort": 4318,
+      "PublishedPort": 4318,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "0.0.0.0",
+      "TargetPort": 4318,
+      "PublishedPort": 4318,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 5775,
+      "PublishedPort": 0,
+      "Protocol": "udp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 5778,
+      "PublishedPort": 0,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 6831,
+      "PublishedPort": 0,
+      "Protocol": "udp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 6832,
+      "PublishedPort": 0,
+      "Protocol": "udp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 9411,
+      "PublishedPort": 0,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 14250,
+      "PublishedPort": 0,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "",
+      "TargetPort": 14268,
+      "PublishedPort": 0,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "::",
+      "TargetPort": 16686,
+      "PublishedPort": 16686,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "0.0.0.0",
+      "TargetPort": 16686,
+      "PublishedPort": 16686,
+      "Protocol": "tcp"
+    }
+  ],
+  "RunningFor": "10 seconds ago",
+  "Service": "jaeger",
+  "Size": "0B",
+  "State": "running",
+  "Status": "Up 9 seconds (healthy)"
+}
+{
+  "Command": "\"docker-entrypoint.s…\"",
+  "CreatedAt": "2026-07-09 12:58:37 -0400 EDT",
+  "ExitCode": 0,
+  "Health": "healthy",
+  "ID": "dade5ec9abc5",
+  "Image": "pgvector/pgvector:pg16",
+  "Labels": "com.docker.compose.config-hash=f5223082d22d4f7d50f7e37164ef9406c418ff0400341bdbbf508c13efd5d3bd,com.docker.compose.container-number=1,com.docker.compose.project=enten,com.docker.compose.project.config_files=/home/mei/projects/enten/docker-compose.yml,com.docker.compose.version=5.2.0,com.docker.compose.depends_on=,com.docker.compose.image=sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb,com.docker.compose.oneoff=False,com.docker.compose.project.working_dir=/home/mei/projects/enten,com.docker.compose.service=postgres",
+  "LocalVolumes": "1",
+  "Mounts": "enten-pgdata",
+  "Name": "enten-postgres",
+  "Names": "enten-postgres",
+  "Networks": "enten_default",
+  "Ports": "0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp",
+  "Project": "enten",
+  "Publishers": [
+    {
+      "URL": "0.0.0.0",
+      "TargetPort": 5432,
+      "PublishedPort": 5433,
+      "Protocol": "tcp"
+    },
+    {
+      "URL": "::",
+      "TargetPort": 5432,
+      "PublishedPort": 5433,
+      "Protocol": "tcp"
+    }
+  ],
+  "RunningFor": "10 seconds ago",
+  "Service": "postgres",
+  "Size": "0B",
+  "State": "running",
+  "Status": "Up 9 seconds (healthy)"
+}
+

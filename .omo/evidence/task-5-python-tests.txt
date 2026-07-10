@@ -1,0 +1,20 @@
+Task 5 (T05) - Python OTel + Prometheus wiring QA evidence
+Generated: 2026-07-09
+
+Command: uv run pytest tests/test_otel.py -v
+Working dir: packages/python/enten
+
+Result:
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/mei/projects/enten/packages/python/enten
+configfile: pyproject.toml
+collected 3 items
+
+tests/test_otel.py ...                                                   [100%]
+
+============================== 3 passed in 0.62s ===============================
+
+Full package suite:
+uv run pytest
+33 passed in 7.01s

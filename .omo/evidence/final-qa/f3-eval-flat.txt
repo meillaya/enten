@@ -1,0 +1,100 @@
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/mei/projects/enten/packages/python/enten/src/enten/cli.py:64 in        │
+│ eval_command                                                                 │
+│                                                                              │
+│   61 │   │   return await run_eval(corpus, stub_llm=stub_llm)                │
+│   62 │                                                                       │
+│   63 │   try:                                                                │
+│ ❱ 64 │   │   result = asyncio.run(_run())                                    │
+│   65 │   except EvalError as exc:                                            │
+│   66 │   │   typer.echo(f"Eval error: {exc}", err=True)                      │
+│   67 │   │   raise typer.Exit(1) from exc                                    │
+│                                                                              │
+│ /home/mei/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python │
+│ 3.11/asyncio/runners.py:190 in run                                           │
+│                                                                              │
+│   187 │   │   │   "asyncio.run() cannot be called from a running event       │
+│       loop")                                                                 │
+│   188 │                                                                      │
+│   189 │   with Runner(debug=debug) as runner:                                │
+│ ❱ 190 │   │   return runner.run(main)                                        │
+│   191                                                                        │
+│   192                                                                        │
+│   193 def _cancel_all_tasks(loop):                                           │
+│                                                                              │
+│ /home/mei/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python │
+│ 3.11/asyncio/runners.py:118 in run                                           │
+│                                                                              │
+│   115 │   │                                                                  │
+│   116 │   │   self._interrupt_count = 0                                      │
+│   117 │   │   try:                                                           │
+│ ❱ 118 │   │   │   return self._loop.run_until_complete(task)                 │
+│   119 │   │   except exceptions.CancelledError:                              │
+│   120 │   │   │   if self._interrupt_count > 0:                              │
+│   121 │   │   │   │   uncancel = getattr(task, "uncancel", None)             │
+│                                                                              │
+│ /home/mei/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python │
+│ 3.11/asyncio/base_events.py:654 in run_until_complete                        │
+│                                                                              │
+│    651 │   │   if not future.done():                                         │
+│    652 │   │   │   raise RuntimeError('Event loop stopped before Future      │
+│        completed.')                                                          │
+│    653 │   │                                                                 │
+│ ❱  654 │   │   return future.result()                                        │
+│    655 │                                                                     │
+│    656 │   def stop(self):                                                   │
+│    657 │   │   """Stop running the event loop.                               │
+│                                                                              │
+│ /home/mei/projects/enten/packages/python/enten/src/enten/cli.py:61 in _run   │
+│                                                                              │
+│   58 │   from enten.eval import EvalError, run_eval, write_baseline          │
+│   59 │                                                                       │
+│   60 │   async def _run() -> EvalReport:                                     │
+│ ❱ 61 │   │   return await run_eval(corpus, stub_llm=stub_llm)                │
+│   62 │                                                                       │
+│   63 │   try:                                                                │
+│   64 │   │   result = asyncio.run(_run())                                    │
+│                                                                              │
+│ /home/mei/projects/enten/packages/python/enten/src/enten/eval/__init__.py:41 │
+│ 9 in run_eval                                                                │
+│                                                                              │
+│   416 │   │   meta = _load_json(fixture_dir / "meta.json")                   │
+│   417 │   │   kind = _fixture_kind(meta)                                     │
+│   418 │   │   expected_raw = _load_json(fixture_dir /                        │
+│       "expected_findings.json")                                              │
+│ ❱ 419 │   │   expected_findings = [FindingSummary.model_validate(f) for f in │
+│       expected_raw]                                                          │
+│   420 │   │                                                                  │
+│   421 │   │   draft, latency_ms = await _run_pipeline(                       │
+│   422 │   │   │   fixture_dir,                                               │
+│                                                                              │
+│ /home/mei/projects/enten/packages/python/enten/src/enten/eval/__init__.py:41 │
+│ 9 in <listcomp>                                                              │
+│                                                                              │
+│   416 │   │   meta = _load_json(fixture_dir / "meta.json")                   │
+│   417 │   │   kind = _fixture_kind(meta)                                     │
+│   418 │   │   expected_raw = _load_json(fixture_dir /                        │
+│       "expected_findings.json")                                              │
+│ ❱ 419 │   │   expected_findings = [FindingSummary.model_validate(f) for f in │
+│       expected_raw]                                                          │
+│   420 │   │                                                                  │
+│   421 │   │   draft, latency_ms = await _run_pipeline(                       │
+│   422 │   │   │   fixture_dir,                                               │
+│                                                                              │
+│ /home/mei/projects/enten/.venv/lib/python3.11/site-packages/pydantic/main.py │
+│ :732 in model_validate                                                       │
+│                                                                              │
+│    729 │   │   │   │   code='validate-by-alias-and-name-false',              │
+│    730 │   │   │   )                                                         │
+│    731 │   │                                                                 │
+│ ❱  732 │   │   return cls.__pydantic_validator__.validate_python(            │
+│    733 │   │   │   obj,                                                      │
+│    734 │   │   │   strict=strict,                                            │
+│    735 │   │   │   extra=extra,                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ValidationError: 1 validation error for FindingSummary
+message
+  Field required [type=missing, input_value={'category': 'bug', 'seve...ded to 
+the cart total.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/missing
+EXIT=1

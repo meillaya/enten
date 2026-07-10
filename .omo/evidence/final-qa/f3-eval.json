@@ -1,0 +1,31 @@
+{
+  "n_fixtures": 2,
+  "by_kind": {
+    "no_false_positive": {
+      "count": 0,
+      "false_positive_rate": 0.0,
+      "n_correct": 0,
+      "n_hallucinated": 0,
+      "n_missed": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  },
+  "cost": {
+    "fixture_count": 2,
+    "input_tokens": 20,
+    "latency_ms": 2,
+    "output_tokens": 0,
+    "total_tokens": 20,
+    "total_usd": 0.0
+  },
+  "latency": {
+    "mean_ms": 1,
+    "per_fixture": {
+      "clean_format": 1,
+      "refactor_only": 1
+    },
+    "total_ms": 2
+  },
+  "determinism_passed": true
+}

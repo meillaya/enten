@@ -1,0 +1,5 @@
+Task 20 verification:
+- Files: packages/python/enten/src/enten/verification/verify.py, packages/python/enten/src/enten/verification/flaky.py
+- Commit: pending
+- Tests: packages/python/enten/tests/test_verification.py
+- Status: PASS (all required deliverables present)

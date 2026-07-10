@@ -1,0 +1,76 @@
+F1: Evidence File Count Audit
+===============================
+Audit timestamp: 2026-07-09
+Plan requirement: "ls .omo/evidence/task-*.txt | wc -l ≥ 50"
+
+ACTUAL COUNTS:
+  task-*.txt evidence files:        17
+  All evidence files (any ext):     28 (including 3 from F1 audit itself)
+  Threshold required:               50
+
+PER-TASK BREAKDOWN (out of 42 plan tasks):
+  T01 (Monorepo skeleton):         0 evidence files
+  T02 (Docker Compose):           14 evidence files (dev-up, dev-down,
+                                     compose-up, cold-cycle, jaeger-api,
+                                     pgvector, scripts, qa-full,
+                                     canonical, all-verify, with-dev,
+                                     with-app, compose-up-raw, dev-up-cold)
+  T03 (Typed config):              0 evidence files
+  T04 (Structured logging):        0 evidence files
+  T05 (OpenTelemetry):             3 evidence files (python-tests,
+                                     ts-tests, typecheck)
+  T06 (Test infra):                0 evidence files
+  T07 (CI matrix):                 0 evidence files
+  T08 (Alembic/Postgres):          0 evidence files
+  T09 (GitHub App webhook):        0 evidence files
+  T10 (Job queue):                 0 evidence files
+  T11 (Worker):                    0 evidence files
+  T12 (GitHub API client):         0 evidence files
+  T13 (DockerSandbox):             0 evidence files
+  T14 (Test parsers):              0 evidence files
+  T15 (Demo repo):                 0 evidence files
+  T16 (Tree-sitter indexer):       0 evidence files
+  T17 (pgvector + embeddings):     0 evidence files
+  T18 (Retrieval layer):           0 evidence files
+  T19 (Semgrep):                   0 evidence files
+  T20 (Security checks):           0 evidence files
+  T21 (PR comment formatter):      0 evidence files
+  T22 (Flaky handler):             0 evidence files
+  T23 (Bot self-ignore):           0 evidence files
+  T24 (LLMProvider interface):     0 evidence files
+  T25 (OpenAICompatProvider):      0 evidence files
+  T26 (OllamaProvider):            0 evidence files
+  T27 (LLMClient wrapper):         0 evidence files
+  T28 (Prompt management):         0 evidence files
+  T29 (Prompt injection defense):  0 evidence files
+  T30 (RAG-augmented review):      0 evidence files
+  T31 (Patch generator):           0 evidence files
+  T32 (Test generation):           0 evidence files
+  T33 (Failure attribution):       0 evidence files
+  T34 (Deterministic verify):      0 evidence files
+  T35 (Verification report):       0 evidence files
+  T36 (Fixture corpus 10+):        0 evidence files
+  T37 (Eval harness CLI):          0 evidence files
+  T38 (CI eval smoke):             0 evidence files
+  T39 (E2BSandbox):                0 evidence files
+  T40 (Dockerfile + deploy):       0 evidence files
+  T41 (README + ADRs):             0 evidence files
+  T42 (Final hardening):           0 evidence files
+
+TASKS WITH EVIDENCE: 2 of 42 (T02, T05)
+TASKS MISSING EVIDENCE: 40 of 42
+
+FAIL: 17 task-*.txt files vs 50 required. 33 short of threshold.
+
+This is a CRITICAL compliance failure against the plan's QA Policy
+(line 169): "Every task MUST include agent-executed QA scenarios
+(see TODO template). Evidence saved to
+`.omo/evidence/task-{N}-{slug}.{ext}`."
+
+Even though all 42 implementation tasks are claimed complete in
+session memory, only 2 tasks have on-disk evidence files
+demonstrating that QA scenarios were actually executed.
+
+NOTE on F1 audit itself: the count above (17) excludes the F1 audit
+files (f1-must-have.txt, f1-must-not-have.txt, f1-evidence-count.txt,
+f1-verdict.txt). Total file count grows as the audit writes more.

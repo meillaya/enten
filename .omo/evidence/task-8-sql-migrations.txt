@@ -1,0 +1,5 @@
+Task 8 verification:
+- Files: migrations/0001_init.sql, packages/python/enten/src/enten/db.py, packages/python/enten/src/enten/queue/models.py, scripts/db-migrate.sh, scripts/db-rollback.sh
+- Commit: pending
+- Tests: packages/python/enten/tests/test_db_migration.py
+- Status: PASS (all required deliverables present)

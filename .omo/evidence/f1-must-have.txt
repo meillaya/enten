@@ -1,0 +1,193 @@
+F1: Plan Compliance Audit — Must Have Verification
+=================================================
+Audit timestamp: 2026-07-09 (post-Wave 7)
+Auditor: oracle (read-only)
+Plan: /home/mei/projects/enten/.omo/plans/ai-engineering-agent.md (lines 128-140)
+
+Each item cites a file:line for the implementation.
+
+MH1 — Determinism guarantee (pass/fail from exit codes only)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/verification/verify.py:1-5
+        Module docstring: "Deterministic verification arbiter (THE ARBITER).
+        Runs a test target in fresh sandboxes, classifies the aggregate
+        outcome purely from sandbox exit codes, and returns structured
+        evidence. No LLM is consulted inside this module — the verdict is
+        closed-form and reproducible."
+    - verify.py imports: enten.parsers.runners, enten.sandbox.models,
+        enten.verification.flaky — NO enten.llm imports.
+    - grep for "LLMProvider|llm_client|client\.complete" in verify.py: 0 matches
+    - MNH4 corroboration: grep "console\.log|print(.*Hello" in verification/: 0 matches
+    - MH10 supports: verification/flaky.py uses run_with_flaky_check
+        (exits from sandbox, not LLM)
+
+MH2 — Patch safety (no contents: write, sandbox-only patch application)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/patch/__init__.py:1-7
+        Module docstring: "Patch generator with sandbox-only application.
+        Produces a unified diff via an LLM tool call, validates it with
+        `git apply --check`, and applies it inside a sandbox. Patches are
+        never pushed to a GitHub branch from this module."
+    - patch/__init__.py:193-195
+        apply_patch docstring: "This function never accepts `owner`,
+        `repo`, or `branch` parameters; application is sandbox-only."
+    - patch/__init__.py defines: _validate_format, _validate_size,
+        _provider_for, generate_patch, check_patch, apply_patch — all
+        operate against sandbox handles, no GitHub API.
+    - grep for "api\.|requests\.|httpx\.|create_pull_request|update_ref|git push"
+        in patch/__init__.py: 0 matches
+    - MNH1 corroboration: grep "contents: write" in packages/: 0 matches
+
+MH3 — Prompt injection defense (<untrusted> tags + evidence-enforced output)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/llm/injection.py:32-39
+        def wrap_untrusted(text: str, kind: Kinds) -> str:
+            """Wrap untrusted content in a randomized XML-like boundary.
+            ...
+            return f'<untrusted-{boundary} kind="{kind}">{text}</untrusted-{boundary}>'
+    - injection.py:1 — module docstring: "Prompt-injection hardening:
+        untrusted content wrappers and output validation."
+    - injection.py declares Finding and ValidationResult BaseModels
+        (lines 16, 24) for output validation.
+
+MH4 — Eval harness + fixture corpus (10+)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/eval/__init__.py exists, 15427 bytes
+    - Fixture corpus in tests/fixtures/prs/:
+        * bug/                  — 3 fixtures (off_by_one, null_deref, missing_validation)
+        * security/             — 2 fixtures (sql_injection, hardcoded_secret)
+        * no_false_positive/    — 2 fixtures (clean_format, refactor_only)
+        * prompt_injection/     — 1 fixture  (ignore_previous)
+        * missing_test/         — 2 fixtures (feature_no_test, edge_case)
+        * smoke/                — 3 fixtures (CI smoke subset)
+        TOTAL = 13 fixtures with expected_findings.json (10 main + 3 smoke)
+        Plan requires 10+. PASS.
+
+MH5 — Cost tracking per PR
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/queue/models.py:48
+        PRReview.cost_usd: Mapped[Decimal] = mapped_column(NUMERIC(10, 6),
+        default=Decimal("0"))
+    - queue/models.py:63-74 — llm_calls table with cost_usd column
+        (NUMERIC(10, 6), default=Decimal("0"))
+    - llm/client.py:46-47 — LLMClient records every call to llm_calls,
+        accrues spend on pr_reviews.cost_usd
+    - llm/client.py:308-344 — _add_llm_call / _increment_cost functions
+        with SELECT ... WHERE run_id == run_id and INSERT INTO llm_calls
+
+MH6 — Idempotency (one review per repo_id, pr_number, commit_sha)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/queue/__init__.py:73-89
+        idempotency_key = payload.get("idempotency_key")
+        if idempotency_key:
+            ... ON CONFLICT (idempotency_key) DO UPDATE ...
+    - queue/__init__.py:36 — Job.idempotency_key field
+    - queue/models.py:34 — idempotency_key: Mapped[str | None] =
+        mapped_column(Text, unique=True, nullable=True)
+    - TS webhook (packages/ts/app/src/queue/jobs.ts per T09 notepad):
+        sha256("${delivery}|${repo.full_name}|${pr.number}|${head_sha}")
+    - packages/ts/app/tests/idempotency.test.ts — integration test
+        sends two signed deliveries, asserts exactly one row.
+
+MH7 — Observability (one OTel trace per PR with structured logs)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/worker.py:162
+        with _tracer().start_as_current_span("pr_review") as span:
+            span.set_attribute("run_id", run_id)
+            await run_pipeline(run_id)
+    - worker.py state machine: PIPELINE_STATES = ["indexing", "reviewing",
+        "testing", "verifying", "commenting", "done"] (line 52)
+    - T05 (per learnings): OpenTelemetry SDK wired to Jaeger exporter.
+    - /metrics endpoint on PORT 9090 per Dockerfile.
+
+MH8 — 2 LLM implementations (OpenAI-compat + Ollama); Anthropic via OpenRouter
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/llm/openai_compat.py:37
+        class OpenAICompatProvider:   # OpenAI / OpenRouter / LM Studio / llama.cpp
+    - packages/python/enten/src/enten/llm/ollama.py:30
+        class OllamaProvider:
+    - llm/client.py:67 — "if 'openrouter' in settings.llm_openai_base_url.lower():"
+        (Anthropic routed through OpenAI-compat when base URL is OpenRouter)
+    - Stub provider (llm/stub.py:23 class StubProvider) is for tests, not
+        a deployment-facing provider. MNH9 check confirms exactly 2 concrete.
+
+MH9 — 2 sandbox implementations (Docker + E2B); dropped Daytona
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/sandbox/docker.py:25
+        class DockerSandbox:
+    - packages/python/enten/src/enten/sandbox/e2b.py:24
+        class E2BSandbox:
+    - sandbox/protocol.py:10 — class SandboxProvider(Protocol)
+    - sandbox/models.py — SandboxHandle, ExecResult (data models, not impls)
+    - MNH2 corroboration: grep "Daytona" in packages/: 0 matches
+
+MH10 — Flaky test handling (3x runs, ≥2/3 = pass)
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/verification/flaky.py:61
+        async def run_with_flaky_check(
+    - flaky.py:66 — runs: int = 3  (default run count is 3)
+    - flaky.py:90-99 — majority-vote aggregation logic for 2/3 = pass
+    - tests/test_flaky_handler.py exists (TDD coverage).
+
+MH11 — Bot ignores own PRs
+  PASS
+  Evidence:
+    - packages/python/enten/src/enten/github/bot_self.py:15
+        def is_bot_pr(pr: PullRequest, settings: Settings) -> bool:
+    - bot_self.py:23-29 — checks `pr.user.login in (slug, bot_login)` and
+        head_repo.owner.login membership.
+    - bot_self.py:32 — __all__ = ["is_bot_pr"]
+    - packages/python/enten/tests/test_bot_self.py:8, 34, 37, 40, 43 —
+        3 tests (true for bot_login, false for human user, head_repo path).
+
+MH12 — TDD for deterministic code; eval for LLM quality; coverage ≥ 80%
+  FAIL
+  Evidence:
+    - scripts/check-coverage.sh exists; enforces 80% gate.
+    - TypeScript coverage (pnpm --filter @enten/app exec vitest run --coverage):
+        99.2% statements / 90.9% branches / 100% functions / 99.2% lines
+        → PASS
+    - Python coverage (bash scripts/check-coverage.sh):
+        *** FAIL: Required test coverage of 80% not reached. Total coverage: 78.78% ***
+        → FAIL by 1.22 percentage points
+    - Per-file breakdown (Python):
+        * FAIL hotspots:
+            cli.py:                 0%   (lines 7-97)
+            indexer/__main__.py:    0%   (lines 3-8)
+            indexer/cli.py:         0%   (lines 7-52)
+            indexer/_factory.py:    31%
+            worker.py:              33%  (lines 110-185)
+            embeddings/_openai_compat.py: 64%
+            llm/ollama.py:          59%
+            llm/openai_compat.py:   72%
+            llm/client.py:          69%
+            llm/stub.py:            68%
+            github/client.py:       77%
+            indexer/chunker.py:     67%
+            failure_attribution:    72%
+            sandbox/e2b.py:         72%
+            sandbox/factory.py:     69%
+            verification/verify.py: 77%
+            parsers/runners.py:     68%
+        * Total: 78.78% < 80% threshold
+    - TDD for deterministic code: test count = 35 .py files in
+        packages/python/enten/tests/ + 9 .ts test files in
+        packages/ts/app/tests/. Test scaffolding is comprehensive.
+    - Eval for LLM quality: eval/__init__.py implements precision/recall
+        with stub LLM (per T37 learnings); 13 fixtures corpus.
+
+  REASON FOR FAIL: Python coverage is 78.78% which is below the
+  required 80% threshold mandated by the plan's Definition of Done
+  (line 119: "`pytest` + `vitest --coverage` both show ≥ 80% on `src/enten/`").
+
+SUMMARY: Must Have 11/12 PASS, 1/12 FAIL (MH12 coverage).

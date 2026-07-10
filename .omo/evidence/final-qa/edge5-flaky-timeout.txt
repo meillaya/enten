@@ -1,0 +1,9 @@
+=== FLAKY HANDLER TEST: timeout on 1 of 3 runs ===
+runs: 3
+  run 1: sandbox=sb-1 exit_code=124 duration_ms=500
+  run 2: sandbox=sb-2 exit_code=0 duration_ms=0
+  run 3: sandbox=sb-3 exit_code=0 duration_ms=0
+majority_pass_count: 2
+outcome: flaky
+PASS: 2/3 passed → flaky warning surfaced
+EXIT=0

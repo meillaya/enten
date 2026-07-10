@@ -1,0 +1,37 @@
+=== ALL VERIFICATION COMMANDS (from task spec) ===
+2026-07-09T13:01:46-04:00
+
+[1] docker compose up -d --wait postgres jaeger
+    PASS (exit 0)
+
+[2] docker compose ps -- both healthy?
+NAME             IMAGE                           COMMAND                  SERVICE    CREATED         STATUS                   PORTS
+enten-jaeger     jaegertracing/all-in-one:1.55   "/go/bin/all-in-one-…"   jaeger     6 seconds ago   Up 5 seconds (healthy)   5775/udp, 5778/tcp, 9411/tcp, 14250/tcp, 0.0.0.0:4317-4318->4317-4318/tcp, [::]:4317-4318->4317-4318/tcp, 0.0.0.0:16686->16686/tcp, [::]:16686->16686/tcp, 6831-6832/udp, 14268/tcp
+enten-postgres   pgvector/pgvector:pg16          "docker-entrypoint.s…"   postgres   6 seconds ago   Up 5 seconds (healthy)   0.0.0.0:5433->5432/tcp, [::]:5433->5432/tcp
+    healthy count: 2 (expected 2)
+    PASS
+
+[3] curl -fsS http://localhost:16686/api/services
+    PASS (HTTP 200)
+
+[4] CREATE EXTENSION vector
+CREATE EXTENSION
+    PASS (prints CREATE EXTENSION)
+
+[5] SELECT extname FROM pg_extension WHERE extname='vector'
+ extname 
+---------
+ vector
+(1 row)
+    PASS (prints vector)
+
+[6] docker compose down -v
+    PASS (exit 0)
+
+[7] bash scripts/dev-up.sh (cold start)
+    PASS (exit 0)
+
+[8] bash scripts/dev-down.sh
+    PASS (exit 0)
+
+=== SUMMARY: ALL 8 COMMANDS PASSED ===

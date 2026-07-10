@@ -1,0 +1,18 @@
+==================== F2 BUILD EVIDENCE ====================
+Timestamp: 2026-07-09T20:58:17-04:00
+
+=== 1. uv sync ===
+ - urllib3==2.7.0
+ - wrapt==2.2.2
+BUILD_SYNC_EXIT=0
+Exit: BUILD_SYNC_EXIT=0
+
+=== 2. Import check: from enten.cli import main ===
+CLI IMPORT OK
+IMPORT_EXIT=0
+
+=== 3. pnpm install (TS workspace) ===
+Scope: all 2 workspace projects
+Already up to date
+Done in 416ms using pnpm v11.10.0
+PNPM_INSTALL_EXIT=0

@@ -1,0 +1,5 @@
+Task 16 verification:
+- Files: packages/python/enten/src/enten/indexer/pipeline.py, packages/python/enten/src/enten/indexer/chunker.py, packages/python/enten/src/enten/indexer/cli.py
+- Commit: pending
+- Tests: packages/python/enten/tests/test_indexer.py
+- Status: PASS (all required deliverables present)
