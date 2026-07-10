@@ -164,11 +164,6 @@ def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _fixture_kind(meta: dict[str, Any]) -> str:
-    kind = meta.get("kind") if isinstance(meta, dict) else None
-    return str(kind) if kind else "unknown"
-
-
 def _findings_match(
     bot: FindingSummary,
     expected: FindingSummary,
@@ -402,9 +397,8 @@ async def run_eval(
     if not corpus_path.is_dir():
         raise EvalError(f"corpus is not a directory: {corpus_dir}")
 
-    fixture_dirs = sorted(
-        [p for p in corpus_path.iterdir() if p.is_dir() and (p / "pr.json").exists()]
-    )
+    pr_json_paths = sorted(corpus_path.rglob("pr.json"))
+    fixture_dirs = [p.parent for p in pr_json_paths]
     if not fixture_dirs:
         raise EvalError(f"corpus has 0 fixtures: {corpus_dir}")
 
@@ -413,8 +407,7 @@ async def run_eval(
     total_usage = Usage(input_tokens=0, output_tokens=0)
 
     for fixture_dir in fixture_dirs:
-        meta = _load_json(fixture_dir / "meta.json")
-        kind = _fixture_kind(meta)
+        kind = fixture_dir.parent.name
         expected_raw = _load_json(fixture_dir / "expected_findings.json")
         expected_findings = [FindingSummary.model_validate(f) for f in expected_raw]
 

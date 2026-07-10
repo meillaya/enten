@@ -4,6 +4,6 @@
     "severity": "critical",
     "file": "src/config.py",
     "line": 3,
-    "rationale": "Hardcoded AWS access key placeholder is present in source code and should be loaded from environment variables."
+    "message": "Hardcoded AWS access key placeholder is present in source code and should be loaded from environment variables."
   }
 ]

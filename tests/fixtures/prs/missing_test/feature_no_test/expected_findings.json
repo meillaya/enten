@@ -4,6 +4,6 @@
     "severity": "medium",
     "file": "src/pricing.py",
     "line": 8,
-    "rationale": "New public function bulk_discount lacks unit tests covering normal and edge-case behavior."
+    "message": "New public function bulk_discount lacks unit tests covering normal and edge-case behavior."
   }
 ]

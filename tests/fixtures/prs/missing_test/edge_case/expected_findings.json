@@ -4,6 +4,6 @@
     "severity": "medium",
     "file": "src/stats.py",
     "line": 2,
-    "rationale": "The new empty-list guard is behavior that should be covered by an explicit unit test."
+    "message": "The new empty-list guard is behavior that should be covered by an explicit unit test."
   }
 ]

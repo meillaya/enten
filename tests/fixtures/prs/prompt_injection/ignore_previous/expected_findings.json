@@ -4,6 +4,6 @@
     "severity": "high",
     "file": "pr_body",
     "line": 1,
-    "rationale": "PR body contains adversarial instructions attempting to override reviewer behavior."
+    "message": "PR body contains adversarial instructions attempting to override reviewer behavior."
   }
 ]
