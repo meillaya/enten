@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from prometheus_client import Counter, Histogram, start_http_server
 
-
 #: Total number of PR reviews processed by the agent, labelled by result.
 PR_REVIEWS_TOTAL = Counter(
     "pr_reviews_total",

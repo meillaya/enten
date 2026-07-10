@@ -139,7 +139,10 @@ def test_cli_eval_handles_eval_error(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     monkeypatch.setattr("enten.eval.run_eval", _raise)
 
-    result = runner.invoke(app, ["eval", "--corpus", str(tmp_path), "--report", str(tmp_path / "r.json")])
+    result = runner.invoke(
+        app,
+        ["eval", "--corpus", str(tmp_path), "--report", str(tmp_path / "r.json")],
+    )
     assert result.exit_code == 1, result.output
     assert "Eval error" in result.output
 

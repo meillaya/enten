@@ -22,7 +22,6 @@ from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse
 from enten.parsers.models import PytestResult, VitestResult
 from enten.parsers.runners import SandboxProvider, run_pytest, run_vitest
 
-
 MAX_PATCH_BYTES = 50_000
 
 
@@ -124,10 +123,7 @@ async def generate_tests(
     ``vitest --run --reporter=json`` (TypeScript). If validation fails,
     :class:`GenerationError` is raised and no tests are returned.
     """
-    if isinstance(review_draft, str):
-        draft = ReviewDraft(content=review_draft)
-    else:
-        draft = review_draft
+    draft = ReviewDraft(content=review_draft) if isinstance(review_draft, str) else review_draft
 
     prompt = load_prompt("test_gen", version=1)
     code = _build_code(draft, retrieved_chunks)

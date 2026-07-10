@@ -16,7 +16,6 @@ from enten.test_gen import (
     generate_tests,
 )
 
-
 VALID_PY_TEST = """\
 def test_addition():
     assert 1 + 1 == 2

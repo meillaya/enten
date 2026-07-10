@@ -9,12 +9,14 @@ import pytest
 from enten.failure_attribution import Attribution
 from enten.github.client import GitHubClient
 from enten.reporting.comment import BOT_MARKER, Finding, PRReview
-from enten.reporting.verification_report import PRReviewRun, Patch, post_report, render_report
+from enten.reporting.verification_report import Patch, PRReviewRun, post_report, render_report
 from enten.test_gen import GeneratedTest, GeneratedTests, ReviewDraft
 from enten.verification.verify import RunEvidence, VerificationResult
 
 
-def _verification(outcome: Literal["pass", "flaky", "fail", "error"] = "fail") -> VerificationResult:
+def _verification(
+    outcome: Literal["pass", "flaky", "fail", "error"] = "fail",
+) -> VerificationResult:
     """Build a minimal VerificationResult for tests."""
     return VerificationResult(
         outcome=outcome,

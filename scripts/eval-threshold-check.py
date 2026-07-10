@@ -62,9 +62,18 @@ def main(argv: list[str]) -> int:
     recall_ok = recall >= recall_min
     fpr_ok = fpr <= fpr_max
 
-    print(f"precision:           {precision:.4f} (min {precision_min:.4f}) {'PASS' if precision_ok else 'FAIL'}")
-    print(f"recall:              {recall:.4f} (min {recall_min:.4f}) {'PASS' if recall_ok else 'FAIL'}")
-    print(f"false_positive_rate: {fpr:.4f} (max {fpr_max:.4f}) {'PASS' if fpr_ok else 'FAIL'}")
+    print(
+        f"precision:           {precision:.4f} (min {precision_min:.4f}) "
+        f"{'PASS' if precision_ok else 'FAIL'}"
+    )
+    print(
+        f"recall:              {recall:.4f} (min {recall_min:.4f}) "
+        f"{'PASS' if recall_ok else 'FAIL'}"
+    )
+    print(
+        f"false_positive_rate: {fpr:.4f} (max {fpr_max:.4f}) "
+        f"{'PASS' if fpr_ok else 'FAIL'}"
+    )
 
     if precision_ok and recall_ok and fpr_ok:
         print("eval threshold check: PASS")
