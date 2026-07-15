@@ -145,8 +145,14 @@ jobs:
         with:
           node-version: "22"
           cache: pnpm
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.10.4"
+          enable-cache: true
       - name: Install TypeScript dependencies
         run: pnpm install --frozen-lockfile
+      - name: Apply database migrations
+        run: bash scripts/db-migrate.sh
       - name: Typecheck
         run: make typecheck
       - name: Build

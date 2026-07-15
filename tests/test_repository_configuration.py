@@ -24,3 +24,13 @@ def test_dependabot_watches_workspace_manifest_directories() -> None:
         "pip": "/packages/python/enten",
         "npm": "/",
     }
+
+
+def test_typescript_ci_migrates_its_isolated_database() -> None:
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text())
+    steps = workflow["jobs"]["typescript"]["steps"]
+
+    assert any(
+        step.get("uses", "").startswith("astral-sh/setup-uv@") for step in steps
+    )
+    assert any(step.get("run") == "bash scripts/db-migrate.sh" for step in steps)
