@@ -209,6 +209,28 @@ async def test_clean_stale_jobs_resets_stale_indexing_job(migrated_db: Any) -> N
     assert "stale" in row["last_error"]
 
 
+async def test_clean_stale_jobs_does_not_reclaim_unexpired_lease(migrated_db: Any) -> None:
+    run_id = await enqueue({"kind": "pr_review", "payload": {}})
+    job = await claim_next("slow-worker")
+    assert job is not None
+    async with migrated_db["pool"].acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE jobs
+            SET updated_at = now() - interval '1 hour',
+                lease_expires_at = now() + interval '5 minutes'
+            WHERE run_id = $1
+            """,
+            run_id,
+        )
+
+    count = await clean_stale_jobs(threshold_minutes=15)
+    competing_claim = await claim_next("competing-worker")
+
+    assert count == 0
+    assert competing_claim is None
+
+
 @pytest.mark.parametrize(
     ("app_id", "private_key", "missing_name"),
     [

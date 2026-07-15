@@ -18,10 +18,11 @@ a testcontainers Postgres pool without fighting module-level settings.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, TypedDict
 
 from enten.logging import new_run_id
+from enten.queue.leases import maintain_lease, renew_lease
 from enten.queue.pool import get_queue_pool, init_queue
 
 
@@ -110,7 +111,6 @@ async def claim_next(
     ``state='indexing'``.
     """
     pool = get_queue_pool()
-    lease_expires_at = datetime.now(UTC) + lease_duration
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -130,7 +130,7 @@ async def claim_next(
             SET state = CASE WHEN job.state = 'queued' THEN 'indexing' ELSE job.state END,
                 claimed_by = $1,
                 claim_generation = job.claim_generation + 1,
-                lease_expires_at = $2,
+                lease_expires_at = now() + $2::interval,
                 updated_at = now()
             FROM candidate
             WHERE job.id = candidate.id
@@ -139,7 +139,7 @@ async def claim_next(
                       job.trace_id
             """,
             worker_id,
-            lease_expires_at,
+            lease_duration,
         )
     if row is None:
         return None
@@ -265,10 +265,12 @@ __all__ = [
     "init_queue",
     "list_latest_review_checkpoints",
     "load_latest_review_checkpoint",
+    "maintain_lease",
     "mark_effect_indeterminate",
     "mark_failed",
     "mark_state",
     "prepare_effect",
     "record_effect_attempt",
+    "renew_lease",
     "save_review_checkpoint",
 ]

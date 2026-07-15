@@ -33,6 +33,7 @@ from enten.pipeline import (
 )
 from enten.queue import (
     claim_next,
+    maintain_lease,
     mark_failed,
     mark_state,
 )
@@ -120,7 +121,13 @@ async def clean_stale_jobs(threshold_minutes: int = 15) -> int:
             END,
             updated_at = now()
         WHERE state = ANY($1::text[])
-          AND updated_at < now() - ($2 * interval '1 minute')
+          AND (
+              (lease_expires_at IS NOT NULL AND lease_expires_at < now())
+              OR (
+                  lease_expires_at IS NULL
+                  AND updated_at < now() - ($2 * interval '1 minute')
+              )
+          )
         RETURNING run_id
         """,
         ["indexing", "reviewing", "testing", "verifying", "commenting"],
@@ -173,39 +180,44 @@ async def main(poll_interval: int = 5) -> None:
             run_id = job["run_id"]
             bind_context(run_id=run_id, worker_id=worker_id)
             try:
-                envelope = ReviewJobEnvelope.model_validate(job["payload"])
-                expected_trace_id = job["trace_id"]
-                if not isinstance(expected_trace_id, str):
-                    raise JobTraceError("claimed job is missing its authenticated trace id")
-                parent = extract_job_context(
-                    traceparent=envelope.traceparent,
-                    tracestate=envelope.tracestate,
-                    expected_trace_id=expected_trace_id,
-                )
-                with worker_tracer().start_as_current_span(
-                    "pr_review.consume",
-                    context=parent,
-                    kind=SpanKind.CONSUMER,
-                ) as span:
-                    span.set_attribute("run_id", run_id)
-                    async with public_pull_request_checkout(
-                        repository_full_name=envelope.repository.full_name,
-                        pr_number=envelope.pull_request.number,
-                        head_sha=envelope.pull_request.head_sha,
-                    ) as repository_path:
-                        await run_pipeline(
-                            run_id,
-                            payload=job["payload"],
-                            dependencies=build_pipeline_dependencies(
+                async with maintain_lease(
+                    run_id,
+                    worker_id=worker_id,
+                    generation=job["generation"],
+                ):
+                    envelope = ReviewJobEnvelope.model_validate(job["payload"])
+                    expected_trace_id = job["trace_id"]
+                    if not isinstance(expected_trace_id, str):
+                        raise JobTraceError("claimed job is missing its authenticated trace id")
+                    parent = extract_job_context(
+                        traceparent=envelope.traceparent,
+                        tracestate=envelope.tracestate,
+                        expected_trace_id=expected_trace_id,
+                    )
+                    with worker_tracer().start_as_current_span(
+                        "pr_review.consume",
+                        context=parent,
+                        kind=SpanKind.CONSUMER,
+                    ) as span:
+                        span.set_attribute("run_id", run_id)
+                        async with public_pull_request_checkout(
+                            repository_full_name=envelope.repository.full_name,
+                            pr_number=envelope.pull_request.number,
+                            head_sha=envelope.pull_request.head_sha,
+                        ) as repository_path:
+                            await run_pipeline(
                                 run_id,
-                                github_client=runtime.github_client,
-                                generation=job["generation"],
-                                verifier=runtime.remote_verifier,
-                            ),
-                            repository_path=repository_path,
-                            checkout_validator=runtime.checkout_validator,
-                            verification_command=runtime.verification_command,
-                        )
+                                payload=job["payload"],
+                                dependencies=build_pipeline_dependencies(
+                                    run_id,
+                                    github_client=runtime.github_client,
+                                    generation=job["generation"],
+                                    verifier=runtime.remote_verifier,
+                                ),
+                                repository_path=repository_path,
+                                checkout_validator=runtime.checkout_validator,
+                                verification_command=runtime.verification_command,
+                            )
                 logger.info("job_completed", run_id=run_id, worker_id=worker_id)
             except Exception as exc:
                 logger.exception(

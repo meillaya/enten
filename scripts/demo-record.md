@@ -15,14 +15,17 @@ make install
 ```bash
 cp .env.example .env
 docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
+export SANDBOX_DOCKER_IMAGE="$(docker image inspect --format '{{.Id}}' enten-verifier-httpie:3.2.4)"
 ```
 
-Replace the example hook origin in `packages/ts/app/github-app.yml` with the public HTTPS origin, create the App from that manifest, and put its real App ID, webhook secret, PEM path, verifier image, and verifier command in `.env`:
+Replace the example hook origin in `packages/ts/app/github-app.yml` with the public HTTPS origin, create the App from that manifest, and put its real App ID, webhook secret, PEM path, exported immutable verifier image ID, and verifier command in `.env`:
 
 ```dotenv
-SANDBOX_DOCKER_IMAGE=enten-verifier-httpie:3.2.4
+SANDBOX_DOCKER_IMAGE=sha256:<64-hex>
 VERIFICATION_COMMAND=python /opt/verifier/verify.py
 ```
+
+The mutable build tag is only a local handle for producing the image; the worker rejects tags before Docker client creation.
 
 ## 3. Start and probe the complete stack
 

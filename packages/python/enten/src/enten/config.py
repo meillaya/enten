@@ -10,8 +10,8 @@ read by the Python side of the agent. The :class:`Settings` class is a
 * ignores unknown env vars (``extra="ignore"``) so that sibling processes
   (devenv shell exports, OTEL SDK, etc.) can dump anything they want
   into the environment without breaking the agent,
-* raises ``ValidationError`` on a bad type — there is no silent coercion,
-  so a typo in ``MAX_PR_DIFF_TOKENS=abc`` is loud, not silent.
+* raises ``ValidationError`` on a bad type rather than accepting malformed
+  values silently.
 
 The constructor is intentionally logging-free. Secret values are *never*
 printed, echoed, or written to ``Settings.__repr__``; redaction is the
@@ -23,7 +23,7 @@ Usage::
     from enten.config import Settings
 
     s = Settings()  # reads .env + process env
-    assert s.max_pr_diff_tokens == 50000
+    assert s.llm_max_iterations == 15
 
     # For tests, point at a temp file:
     s = Settings(_env_file="/tmp/test.env")
@@ -95,15 +95,10 @@ class Settings(BaseSettings):
     github_app_private_key_path: Path | None = None
     # Shared secret used to validate ``X-Hub-Signature-256`` on inbound webhooks.
     github_webhook_secret: str | None = None
-    # The ``committer_email`` we use when pushing fix branches so the
-    # agent can self-ignore its own commits in cron/diff jobs.
-    committer_email: str | None = None
-
     # ── LLM provider ─────────────────────────────────────────────────────
     llm_provider: LLMProvider = LLMProvider.OPENAI_COMPAT
     # Default chat model name sent on every request.
     llm_default_model: str = "gpt-4o-mini"
-    # Hard cap on ReAct-style iterations per task.
     llm_max_iterations: int = 15
     # OpenAI-compatible base URL; covers OpenAI, Together, vLLM, etc.
     llm_openai_base_url: str = "https://api.openai.com/v1"
@@ -126,8 +121,6 @@ class Settings(BaseSettings):
     # ── Sandbox provider ─────────────────────────────────────────────────
     sandbox_provider: SandboxProvider = SandboxProvider.DOCKER
     sandbox_docker_image: str | None = None
-    # Required when ``sandbox_provider == e2b``.
-    e2b_api_key: str | None = None
     verification_command: str = "python -m compileall -q ."
 
     # ── Database ─────────────────────────────────────────────────────────
@@ -135,19 +128,13 @@ class Settings(BaseSettings):
     # the asyncpg boundary.
     database_url: str = "postgresql+asyncpg://enten@localhost/enten"
 
-    # ── Cost & diff guardrails ───────────────────────────────────────────
-    # Token budget for a single PR's diff.
-    max_pr_diff_tokens: int = 50000
+    # ── Cost guardrail ───────────────────────────────────────────
     # USD per-PR cap enforced by the LLM client.
     per_pr_cost_cap_usd: float = 0.50
 
     # ── Observability ────────────────────────────────────────────────────
     # OTLP gRPC endpoint for the OTel SDK.
     otel_endpoint: str = "http://localhost:4317"
-    # Port the Prometheus ``/metrics`` exposition listens on. The TS
-    # edge uses ``METRICS_PORT`` (default 9091) to avoid clashing with
-    # the Python agent on a single host.
-    prometheus_metrics_port: int = 9090
 
 
 __all__ = [

@@ -13,6 +13,7 @@ import httpx
 import structlog
 
 from enten.config import Settings
+from enten.github import writes
 from enten.github.auth import create_jwt
 from enten.github.models import CheckRun, CheckRunOutput, Comment, PRFile, PullRequest
 from enten.rate_limit import _default_registry
@@ -47,7 +48,6 @@ class GitHubClient:
         self.github_app_id = settings.github_app_id
         self.github_app_private_key_path = settings.github_app_private_key_path
         self.github_webhook_secret = settings.github_webhook_secret
-        self.committer_email = settings.committer_email
         self.github_app_slug = settings.github_app_slug
         self._rate_limit_bucket = _default_registry.get("github", capacity=100, refill_rate=1.0)
         self._client = httpx.AsyncClient(
@@ -241,34 +241,7 @@ class GitHubClient:
         Idempotent: if an existing comment on the PR already contains the
         marker, PATCH it in place; otherwise POST a new comment.
         """
-        if marker not in body:
-            body = f"{marker}\n{body}"
-
-        headers = await self._api_headers(owner, repo)
-        comments_response = await self._request(
-            "GET",
-            f"/repos/{owner}/{repo}/issues/{number}/comments",
-            headers=headers,
-        )
-        comments = [Comment.model_validate(item) for item in comments_response.json()]
-
-        for comment in comments:
-            if marker in comment.body:
-                response = await self._request(
-                    "PATCH",
-                    f"/repos/{owner}/{repo}/issues/comments/{comment.id}",
-                    headers=headers,
-                    json={"body": body},
-                )
-                return Comment.model_validate(response.json())
-
-        response = await self._request(
-            "POST",
-            f"/repos/{owner}/{repo}/issues/{number}/comments",
-            headers=headers,
-            json={"body": body},
-        )
-        return Comment.model_validate(response.json())
+        return await writes.post_pr_comment(self, owner, repo, number, body, marker)
 
     async def create_check_run(
         self,
@@ -279,21 +252,7 @@ class GitHubClient:
         output: CheckRunOutput,
     ) -> CheckRun:
         """Create a check run for the given commit SHA."""
-        headers = await self._api_headers(owner, repo)
-        payload = {
-            "name": "enten",
-            "head_sha": sha,
-            "status": "completed",
-            "conclusion": conclusion,
-            "output": output.model_dump(exclude_none=True),
-        }
-        response = await self._request(
-            "POST",
-            f"/repos/{owner}/{repo}/check-runs",
-            headers=headers,
-            json=payload,
-        )
-        return CheckRun.model_validate(response.json())
+        return await writes.create_check_run(self, owner, repo, sha, conclusion, output)
 
     async def update_check_run(
         self,
@@ -304,19 +263,7 @@ class GitHubClient:
         output: CheckRunOutput,
     ) -> CheckRun:
         """Update an existing check run."""
-        headers = await self._api_headers(owner, repo)
-        payload = {
-            "status": "completed",
-            "conclusion": conclusion,
-            "output": output.model_dump(exclude_none=True),
-        }
-        response = await self._request(
-            "PATCH",
-            f"/repos/{owner}/{repo}/check-runs/{check_run_id}",
-            headers=headers,
-            json=payload,
-        )
-        return CheckRun.model_validate(response.json())
+        return await writes.update_check_run(self, owner, repo, check_run_id, conclusion, output)
 
     def is_bot_author(self, pr: PullRequest) -> bool:
         """Return True when the PR appears to have been authored by this bot.

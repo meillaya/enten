@@ -36,6 +36,8 @@ class ReviewVerifier(Protocol):
 class ReviewEffects(Protocol):
     async def publish(self, payload: ReportPayload) -> EffectReceipt: ...
 
+    async def reconcile(self, payload: ReportPayload) -> EffectReceipt: ...
+
 
 class StageSink(Protocol):
     async def transition(self, stage: ReviewStage) -> None: ...
@@ -101,9 +103,10 @@ async def execute_review(
             case "findings":
                 with dependencies.tracer.start_as_current_span("pipeline.verify"):
                     evidence = await dependencies.verifier.verify(request)
-                    evidence = evidence.model_copy(
-                        update={"verdict": _arbitrate(evidence.exit_codes)}
-                    )
+                    if evidence.infrastructure_detail is None:
+                        evidence = evidence.model_copy(
+                            update={"verdict": _arbitrate(evidence.exit_codes)}
+                        )
                     run = run.model_copy(update={"stage": "verified", "verification": evidence})
                     await _persist(dependencies, run)
             case "verified":
@@ -127,21 +130,28 @@ async def execute_review(
                         run = run.model_copy(update={"report_receipt": indeterminate})
                         await _persist(dependencies, run)
                         raise IndeterminateEffectError(indeterminate.detail) from exc
+                    if receipt.state not in {"posted", "skipped"}:
+                        run = run.model_copy(update={"report_receipt": receipt})
+                        await _persist(dependencies, run)
+                        raise IndeterminateEffectError(
+                            receipt.detail or "outbound effect is indeterminate"
+                        )
                     run = run.model_copy(update={"stage": "completed", "report_receipt": receipt})
                     await _persist(dependencies, run)
             case "reporting":
-                receipt = run.report_receipt
-                if receipt is not None and receipt.state in {"posted", "skipped"}:
-                    run = run.model_copy(update={"stage": "completed"})
+                try:
+                    with dependencies.tracer.start_as_current_span("pipeline.reconcile"):
+                        receipt = await dependencies.effects.reconcile(build_report(run))
+                except Exception as exc:
+                    raise IndeterminateEffectError(
+                        f"effect reconciliation failed: {type(exc).__name__}: {exc}"
+                    ) from exc
+                if receipt.state in {"posted", "skipped"}:
+                    run = run.model_copy(update={"stage": "completed", "report_receipt": receipt})
                     await _persist(dependencies, run)
                     continue
-                if receipt is None or receipt.state == "attempting":
-                    receipt = EffectReceipt(
-                        state="indeterminate",
-                        detail="previous outbound attempt has no durable result",
-                    )
-                    run = run.model_copy(update={"report_receipt": receipt})
-                    await _persist(dependencies, run)
+                run = run.model_copy(update={"report_receipt": receipt})
+                await _persist(dependencies, run)
                 raise IndeterminateEffectError(receipt.detail or "outbound effect is indeterminate")
             case "completed":
                 if reconcile_completed_checkpoint:

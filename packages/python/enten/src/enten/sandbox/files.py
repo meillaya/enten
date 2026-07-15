@@ -72,8 +72,8 @@ def safe_relative_path(raw_path: str) -> Path:
     windows = PureWindowsPath(raw_path)
     if not raw_path or posix.is_absolute() or windows.is_absolute() or windows.drive:
         raise UnsafeSandboxPathError(path=raw_path, reason="absolute path")
-    if any(part in {"", ".", ".."} for part in posix.parts):
-        raise UnsafeSandboxPathError(path=raw_path, reason="parent or empty component")
+    if any(part in {"", ".", ".."} for part in raw_path.split("/")):
+        raise UnsafeSandboxPathError(path=raw_path, reason="parent, dot, or empty component")
     if "\\" in raw_path:
         raise UnsafeSandboxPathError(path=raw_path, reason="platform path separator")
     return Path(*posix.parts)

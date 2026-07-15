@@ -51,7 +51,7 @@ Key boundaries:
 
 - **Ingress:** only `pull_request` actions `opened`, `reopened`, `synchronize`, and non-draft `ready_for_review`; unsupported events are acknowledged and ignored.
 - **Repository:** public GitHub repositories only. The worker fetches the exact `refs/pull/<n>/head`, disables credential helpers, validates the canonical origin and head SHA, and removes the temporary checkout.
-- **Persistence:** checksum-verified SQL migrations, leased queue generations, compare-and-swap stage checkpoints, and durable external-effect states (`prepared`, `attempted`, `succeeded`, `indeterminate`).
+- **Persistence:** checksum-verified SQL migrations, generation-CAS queue leases renewed across checkout, verification, and reporting, compare-and-swap stage checkpoints, and durable external-effect states (`prepared`, `attempted`, `succeeded`, `indeterminate`).
 - **Verification:** Docker is the only verified backend. Containers use a read-only root filesystem, tmpfs workspace, no network, no capabilities, a non-root user, and bounded CPU, memory, PID, and time limits.
 - **Authority:** the GitHub App can read pull requests and write PR comments/check runs. It cannot write repository contents, Actions, or issues.
 - **Tracing:** the public `traceparent` is discarded. The authenticated edge creates the trusted producer context; the worker verifies and continues that carrier.
@@ -68,7 +68,7 @@ See [the architecture guide](docs/architecture.md), [permission contract](docs/p
 ## How it works
 
 1. The Hono edge validates required headers and content type before reading a size-limited raw body, verifies the SHA-256 HMAC, validates the strict versioned job contract, and atomically enqueues it.
-2. The worker claims a job with a generation and lease, validates the authenticated trace carrier, and fetches the exact public PR ref into a mode-0700 temporary checkout.
+2. The worker claims a job with a generation and lease, renews that exact generation throughout the claimed-job scope, validates the authenticated trace carrier, and fetches the exact public PR ref into a mode-0700 temporary checkout. A stale generation cannot renew, checkpoint, report, or complete the job.
 3. The shared stage machine discovers bounded source evidence, generates anchored findings, runs the trusted verification command in the selected immutable Docker image, and persists each stage.
 4. The exit-code arbiter emits `pass`, `flaky`, `fail`, or `error`. Findings cannot override that verdict.
 5. A fenced reporter records the check attempt before calling GitHub, persists the receipt, then does the same for the PR comment. Any uncertain outcome becomes terminal `indeterminate` for operator reconciliation.
@@ -105,10 +105,13 @@ For the pinned HTTPie demonstration image:
 
 ```bash
 docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
-# in .env:
-# SANDBOX_DOCKER_IMAGE=enten-verifier-httpie:3.2.4
+export SANDBOX_DOCKER_IMAGE="$(docker image inspect --format '{{.Id}}' enten-verifier-httpie:3.2.4)"
+# Copy the exported sha256:<64-hex> value into .env. Mutable tags are rejected.
+# SANDBOX_DOCKER_IMAGE=sha256:<64-hex>
 # VERIFICATION_COMMAND=python /opt/verifier/verify.py
 ```
+
+A registry image may instead use `name@sha256:<64-hex>`. The worker validates the immutable reference before creating a Docker client.
 
 The self-hosted worker needs access to `/var/run/docker.sock`; `scripts/dev-up.sh` supplies the socket group ID and rejects missing credentials or a non-file private-key path. Treat Docker socket access as host-level authority and dedicate the worker host accordingly.
 

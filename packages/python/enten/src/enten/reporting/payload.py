@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import html
-
+from enten.reporting.comment import sanitize_markdown_inline
 from enten.review.run import ReportPayload, ReviewRun
 
 
@@ -11,8 +10,8 @@ def build_report(run: ReviewRun) -> ReportPayload:
     available = set(run.proposal.files)
     anchored = [finding for finding in run.findings.findings if finding.file in available]
     evidence_lines = [
-        f"- `{finding.file}:{finding.line}` [{finding.severity}] "
-        f"{html.escape(finding.message).replace(chr(10), ' ')}"
+        f"- `{sanitize_markdown_inline(finding.file)}:{finding.line}` "
+        f"[{finding.severity}] {sanitize_markdown_inline(finding.message)}"
         for finding in anchored
     ]
     verdict = run.verification.verdict
@@ -21,6 +20,14 @@ def build_report(run: ReviewRun) -> ReportPayload:
             "<!-- enten-bot -->",
             f"## enten review: {verdict}",
             f"Verification exits: `{list(run.verification.exit_codes)}`",
+            *(
+                [
+                    "Infrastructure error: "
+                    f"{sanitize_markdown_inline(run.verification.infrastructure_detail)}"
+                ]
+                if run.verification.infrastructure_detail is not None
+                else []
+            ),
             "",
             "### Findings",
             *(evidence_lines or ["No verifiable findings."]),

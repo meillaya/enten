@@ -82,18 +82,18 @@ created → proposed → findings → verified → persisted → reporting → c
 
 Queue states map those stages to `indexing`, `reviewing`, `testing`, `verifying`, `commenting`, and `done`. The default generator emits bounded repository-anchored local findings. LLM provider, prompt, cost, and eval components are available to explicit callers, but are not silently activated by the production worker.
 
-The verifier exit code is authoritative:
+The verifier exit code is authoritative across the default three fresh runs:
 
-- all runs exit `0` → `pass`;
-- mixed reruns → `flaky`;
-- consistent nonzero exits → `fail`;
+- `3/3` runs exit `0` → `pass`;
+- `2/3` runs exit `0` → `flaky`;
+- `1/3` or `0/3` runs exit `0` → `fail`;
 - infrastructure/parser failure → `error`.
 
 Reports may describe findings, but findings cannot change this result.
 
 ## Observability
 
-The causal trace includes edge receive/authenticate/enqueue, worker consume, and pipeline reserve/propose/findings/verify/persist/report spans. The worker rejects a missing, malformed, or trace-ID-mismatched carrier before pipeline execution. Jaeger is the local OTLP target; both languages expose bounded Prometheus metrics.
+The causal trace includes edge receive/authenticate/enqueue, worker consume, and pipeline reserve/propose/findings/verify/persist/report spans. The worker rejects a missing, malformed, or trace-ID-mismatched carrier before pipeline execution. Both processes export traces to the local OTLP target; the TypeScript edge alone serves the bounded Prometheus metrics endpoint on `METRICS_PORT`.
 
 ## Release topology
 

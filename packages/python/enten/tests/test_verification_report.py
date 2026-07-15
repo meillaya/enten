@@ -67,6 +67,36 @@ def test_render_report_strips_findings_without_file_line() -> None:
     assert "src/unknown.py" not in markdown
 
 
+def test_render_report_preserves_sanitized_hostile_anchored_filename() -> None:
+    hostile = "src/evil`\n@octocat\x00.py"
+    review = PRReview(
+        summary={"available_files": [hostile]},
+        static_findings=[
+            Finding(
+                category="security",
+                severity="high",
+                message="anchored finding",
+                file=hostile,
+                line=8,
+            )
+        ],
+        verdict="fail",
+    )
+    run = PRReviewRun(
+        review=review,
+        draft=ReviewDraft(content=""),
+        verification=_verification("fail"),
+        attributions=[],
+    )
+
+    markdown = render_report(run)["pr_comment_md"]
+
+    assert "anchored finding" in markdown
+    assert hostile not in markdown
+    assert "@octocat" not in markdown
+    assert "src/evilˋ�＠octocat�.py:8" in markdown
+
+
 def test_render_report_end_to_end_sections() -> None:
     """A fully populated review run renders every expected comment section."""
     review = PRReview(

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import enten.sandbox.files as sandbox_files
-from enten.sandbox.files import SandboxFileLimitError
+from enten.sandbox.files import SandboxFileLimitError, UnsafeSandboxPathError
 
 
 def test_collect_rejects_file_that_exceeds_per_file_limit(
@@ -98,3 +98,27 @@ def test_validate_excludes_bounded_manifest_from_source_aggregate(
             sandbox_files.TRUSTED_SOURCE_MANIFEST_PATH: "{}",
         }
     )
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "./source.py",
+        "source/./module.py",
+        "source//module.py",
+        "source/",
+    ],
+)
+def test_safe_relative_path_rejects_normalized_aliases(alias: str) -> None:
+    with pytest.raises(UnsafeSandboxPathError):
+        sandbox_files.safe_relative_path(alias)
+
+
+def test_validate_rejects_duplicate_normalized_destination() -> None:
+    with pytest.raises(UnsafeSandboxPathError):
+        sandbox_files.validate_sandbox_files(
+            {
+                "source/module.py": "trusted",
+                "source//module.py": "untrusted",
+            }
+        )

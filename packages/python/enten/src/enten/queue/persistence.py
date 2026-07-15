@@ -6,6 +6,7 @@ import json
 from enum import StrEnum
 from typing import TypedDict
 
+from enten.queue.effect_fencing import refence_prepared_effect
 from enten.queue.pool import get_queue_pool
 
 JsonScalar = str | int | float | bool | None
@@ -137,6 +138,17 @@ async def prepare_effect(
             raise EffectConflictError("effect could not be prepared with the current lease")
         if row["marker"] != marker or _receipt(row)["request"] != json.loads(encoded_request):
             raise EffectConflictError("effect key was reused with different request data")
+        if row["state"] == EffectState.PREPARED and row["generation"] != generation:
+            row = await refence_prepared_effect(
+                conn,
+                run_id,
+                effect_key,
+                generation,
+            )
+            if row is None:
+                raise EffectConflictError(
+                    "prepared effect could not be fenced to the current lease"
+                )
         if row["state"] == EffectState.ATTEMPTED:
             await conn.execute(
                 """

@@ -7,7 +7,7 @@ from typing import Final, Literal, Protocol, assert_never
 
 from anyio.to_thread import run_sync
 
-from enten.review.run import ReviewRequest, VerificationEvidence
+from enten.review.run import ReviewRequest, Verdict, VerificationEvidence
 from enten.sandbox.files import TRUSTED_SOURCE_MANIFEST_PATH, collect_repository_files
 from enten.sandbox.models import ExecResult, SandboxHandle
 from enten.sandbox.protocol import SandboxProvider
@@ -122,6 +122,9 @@ class SandboxVerifier:
             command=request.verification_command,
             log_paths=(),
             verdict=verdict,
+            infrastructure_detail=(
+                "sandbox verification infrastructure failed" if verdict == "error" else None
+            ),
         )
 
 
@@ -166,7 +169,7 @@ def _normalized_source_digest(files: dict[str, str]) -> str:
 
 def _verification_verdict(
     outcome: Literal["pass", "flaky", "fail", "error"],
-) -> Literal["pass", "flaky", "fail"]:
+) -> Verdict:
     match outcome:
         case "pass":
             return "pass"
@@ -175,7 +178,7 @@ def _verification_verdict(
         case "fail":
             return "fail"
         case "error":
-            raise SandboxVerificationError("sandbox verification infrastructure failed")
+            return "error"
         case unreachable:
             assert_never(unreachable)
 

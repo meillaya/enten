@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import re
+import unicodedata
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -34,13 +35,33 @@ class PRReview(BaseModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
 
 
-def _sanitize(text: str) -> str:
-    """Strip dangerous HTML tags and escape remaining HTML metacharacters."""
+def sanitize_markdown_inline(text: str) -> str:
+    """Return untrusted text that cannot change Markdown line or mention structure."""
     text = re.sub(r"<script\b[^>]*>.*?</script>", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<iframe\b[^>]*>.*?</iframe>", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<object\b[^>]*>.*?</object>", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<embed\b[^>]*>", "", text, flags=re.IGNORECASE)
-    return html.escape(text)
+    safe = "".join(_safe_markdown_character(character) for character in text)
+    return html.escape(safe)
+
+
+def sanitize_markdown_block(text: str) -> str:
+    """Return untrusted multiline code without fence or mention escapes."""
+    safe = "".join(
+        character if character == "\n" else _safe_markdown_character(character)
+        for character in text
+    )
+    return html.escape(safe)
+
+
+def _safe_markdown_character(character: str) -> str:
+    if character == "`":
+        return "ˋ"
+    if character == "@":
+        return "＠"
+    if unicodedata.category(character).startswith("C"):
+        return "�"
+    return character
 
 
 def _finding_location(file: str, line: int) -> str:
@@ -65,8 +86,8 @@ def _grouped_findings_rows(findings: list[Finding]) -> str:
     for severity in sorted(by_severity.keys()):
         rows.append(f"**{severity.upper()}**")
         for finding in by_severity[severity]:
-            loc = _finding_location(finding.file, finding.line)
-            msg = _sanitize(finding.message)
+            loc = sanitize_markdown_inline(_finding_location(finding.file, finding.line))
+            msg = sanitize_markdown_inline(finding.message)
             rows.append(f"- `{loc}` — {msg}")
         rows.append("")
 
@@ -100,11 +121,11 @@ def render_pr_comment(review: PRReview) -> str:
     # Summary card
     lines.extend(
         [
-            f"{_badge(verdict)} | **{bot_name}**",
+            f"{_badge(verdict)} | **{sanitize_markdown_inline(str(bot_name))}**",
             "",
-            f"- **Author:** {author}",
-            f"- **Commit:** `{sha}`",
-            f"- **Verdict:** {verdict}",
+            f"- **Author:** {sanitize_markdown_inline(str(author))}",
+            f"- **Commit:** `{sanitize_markdown_inline(str(sha))}`",
+            f"- **Verdict:** {sanitize_markdown_inline(str(verdict))}",
             "",
         ]
     )
@@ -137,7 +158,7 @@ def render_pr_comment(review: PRReview) -> str:
 
     # Suggested tests
     if review.suggested_tests:
-        tests_md = "\n".join(f"- {_sanitize(t)}" for t in review.suggested_tests)
+        tests_md = "\n".join(f"- {sanitize_markdown_inline(t)}" for t in review.suggested_tests)
         lines.extend(
             [
                 "<details>",
@@ -161,7 +182,7 @@ def render_pr_comment(review: PRReview) -> str:
                 "<summary><b>Suggested patch</b></summary>",
                 "",
                 "```diff",
-                _sanitize(patch),
+                sanitize_markdown_block(patch),
                 "```",
                 "",
                 "</details>",
@@ -170,13 +191,16 @@ def render_pr_comment(review: PRReview) -> str:
         )
 
     # Deterministic verdict
-    evidence_md = "\n".join(f"- **{k}:** {v}" for k, v in (review.evidence or {}).items())
+    evidence_md = "\n".join(
+        f"- **{sanitize_markdown_inline(str(key))}:** {sanitize_markdown_inline(str(value))}"
+        for key, value in (review.evidence or {}).items()
+    )
     lines.extend(
         [
             "<details>",
             "<summary><b>Deterministic verdict</b></summary>",
             "",
-            f"**Verdict:** {verdict}",
+            f"**Verdict:** {sanitize_markdown_inline(str(verdict))}",
             "",
             "**Evidence:**" if evidence_md else "",
             evidence_md,

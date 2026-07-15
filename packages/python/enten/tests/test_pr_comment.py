@@ -98,6 +98,30 @@ def test_render_pr_comment_sanitizes_script_tag() -> None:
     assert "badness" in markdown
 
 
+def test_render_pr_comment_sanitizes_hostile_anchored_filename() -> None:
+    hostile = "src/evil`\n@octocat\x00.py"
+    review = PRReview(
+        summary={"available_files": [hostile]},
+        static_findings=[
+            Finding(
+                category="security",
+                severity="high",
+                message="anchored finding",
+                file=hostile,
+                line=7,
+            )
+        ],
+        verdict="fail",
+    )
+
+    markdown = render_pr_comment(review)
+
+    assert hostile not in markdown
+    assert "@octocat" not in markdown
+    assert "\x00" not in markdown
+    assert "src/evilˋ�＠octocat�.py:7" in markdown
+
+
 def test_render_pr_comment_flags_missing_location() -> None:
     """Findings without file:line are rendered with an unknown location label."""
     review = PRReview(

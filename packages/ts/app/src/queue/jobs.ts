@@ -60,7 +60,7 @@ export interface JobEnqueuer {
 
 export function computeIdempotencyKey(envelope: PrJobEnvelope): string {
   const identity = [
-    envelope.repository.full_name,
+    envelope.repository.id,
     envelope.pull_request.number,
     envelope.pull_request.head_sha,
   ].join("|");

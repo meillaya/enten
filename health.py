@@ -2,7 +2,7 @@
 """Minimal health checker for the enten production image.
 
 The TS Hono app serves /health on both PORT (3000) and METRICS_PORT
-(9090) because it reuses the same app.fetch for both listeners. We
+(9091) because it reuses the same app.fetch for both listeners. We
 probe METRICS_PORT so the health check stays independent of public
 webhook traffic.
 """
@@ -13,7 +13,7 @@ import http.client
 import os
 import sys
 
-DEFAULT_PORT = 9090
+DEFAULT_PORT = 9091
 HEALTH_PATH = "/health"
 TIMEOUT_SECONDS = 5
 

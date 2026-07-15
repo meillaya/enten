@@ -46,7 +46,6 @@ def settings(private_key_file: Path) -> Settings:
         github_app_id=123456,
         github_app_private_key_path=private_key_file,
         github_webhook_secret="webhook-secret",
-        committer_email="bot@enten.dev",
         github_app_slug="enten-bot",
     )
 
@@ -280,6 +279,45 @@ async def test_post_pr_comment_is_idempotent(
     assert "updated" in updated.body
     assert post_route.call_count == 1
     assert patch_route.call_count == 1
+
+
+@respx.mock(assert_all_mocked=False)
+async def test_post_pr_comment_does_not_update_marker_owned_by_user(
+    respx_mock: respx.MockRouter,
+    client: GitHubClient,
+) -> None:
+    _install_token_route(respx_mock)
+    marker = "<!-- enten-bot -->"
+    respx_mock.get(path="/repos/owner/repo/issues/42/comments").mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "id": 100,
+                    "html_url": "https://example.test/unowned",
+                    "body": f"{marker}\nhostile",
+                    "user": {"login": "octocat", "id": 1, "type": "User"},
+                }
+            ],
+        )
+    )
+    post_route = respx_mock.post(path="/repos/owner/repo/issues/42/comments").mock(
+        return_value=Response(
+            201,
+            json={
+                "id": 101,
+                "html_url": "https://example.test/owned",
+                "body": f"{marker}\nreview",
+                "user": {"login": "enten-bot[bot]", "id": 99, "type": "Bot"},
+            },
+        )
+    )
+
+    comment = await client.post_pr_comment("owner", "repo", 42, "review")
+
+    assert comment.id == 101
+    assert all(call.request.method != "PATCH" for call in respx_mock.calls)
+    assert post_route.call_count == 1
 
 
 # ── is_bot_author ───────────────────────────────────────────────────────

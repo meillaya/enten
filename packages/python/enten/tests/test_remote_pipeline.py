@@ -208,8 +208,10 @@ async def test_sandbox_verifier_rejects_trusted_manifest_collision(tmp_path: Pat
         await SandboxVerifier(Provider()).verify(request)
 
 
-async def test_sandbox_verifier_cleans_all_leases_after_run_failure(tmp_path: Path) -> None:
-    from enten.review.remote import SandboxVerificationError, SandboxVerifier
+async def test_sandbox_verifier_records_infrastructure_failure_after_cleanup(
+    tmp_path: Path,
+) -> None:
+    from enten.review.remote import SandboxVerifier
 
     # Given
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
@@ -255,10 +257,13 @@ async def test_sandbox_verifier_cleans_all_leases_after_run_failure(tmp_path: Pa
         verification_command=("true",),
     )
 
-    # When / Then
-    with pytest.raises(SandboxVerificationError, match="infrastructure failed"):
-        await SandboxVerifier(provider).verify(request)
+    # When
+    evidence = await SandboxVerifier(provider).verify(request)
 
+    # Then
+    assert evidence.verdict == "error"
+    assert evidence.exit_codes == (0, 0)
+    assert evidence.infrastructure_detail == "sandbox verification infrastructure failed"
     assert provider.destroyed == ["sandbox-1", "sandbox-2", "sandbox-3"]
 
 

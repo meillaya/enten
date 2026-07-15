@@ -5,17 +5,16 @@ Exposes local review, cost reporting, evaluation, and the production worker.
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import json
-import os
 import shlex
-import subprocess
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import anyio
 import typer
+
+from enten.local_identity import local_content_sha as _local_content_sha
 
 if TYPE_CHECKING:
     from enten.eval import EvalReport
@@ -28,23 +27,6 @@ app = typer.Typer(
 )
 
 DEFAULT_REVIEW_STORE = Path(".enten/reviews.json")
-_GENERATED_PARTS = frozenset(
-    {
-        ".enten",
-        ".git",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".venv",
-        "__pycache__",
-        "build",
-        "coverage",
-        "dist",
-        "htmlcov",
-        "node_modules",
-        "out",
-    }
-)
 
 
 @app.command()
@@ -58,7 +40,7 @@ def worker(poll_interval: int = 5) -> None:
     """Run the enten worker process."""
     from enten.worker import main
 
-    asyncio.run(main(poll_interval=poll_interval))
+    anyio.run(partial(main, poll_interval=poll_interval))
 
 
 @app.command(name="review")
@@ -199,7 +181,7 @@ def eval_command(
         return await run_eval(corpus, stub_llm=stub_llm)
 
     try:
-        result = asyncio.run(_run())
+        result = anyio.run(_run)
     except EvalError as exc:
         typer.echo(f"Eval error: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -229,56 +211,6 @@ def _aggregate_precision(report: EvalReport) -> float:
     total_correct = sum(m.n_correct for m in report.by_kind.values())
     total_bot = total_correct + sum(m.n_hallucinated for m in report.by_kind.values())
     return total_correct / total_bot if total_bot else 0.0
-
-
-def _local_content_sha(repository: Path, store_path: Path | None = None) -> str:
-    digest = hashlib.sha256()
-    excluded_store = _store_relative_to_repository(repository, store_path)
-    for relative in _local_content_paths(repository):
-        if _GENERATED_PARTS.intersection(relative.parts) or relative == excluded_store:
-            continue
-        source = repository / relative
-        if source.is_symlink() or not source.is_file():
-            continue
-        digest.update(relative.as_posix().encode())
-        digest.update(source.read_bytes())
-    return digest.hexdigest()
-
-
-def _local_content_paths(repository: Path) -> tuple[Path, ...]:
-    try:
-        completed = subprocess.run(
-            (
-                "git",
-                "-C",
-                str(repository),
-                "ls-files",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-                "-z",
-            ),
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        completed = None
-    if completed is not None and completed.returncode == 0:
-        return tuple(sorted(Path(os.fsdecode(raw)) for raw in completed.stdout.split(b"\0") if raw))
-    return tuple(sorted(path.relative_to(repository) for path in repository.rglob("*")))
-
-
-def _store_relative_to_repository(
-    repository: Path,
-    store_path: Path | None,
-) -> Path | None:
-    if store_path is None:
-        return None
-    try:
-        return store_path.resolve().relative_to(repository.resolve())
-    except ValueError:
-        return None
 
 
 if __name__ == "__main__":

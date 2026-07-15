@@ -11,7 +11,14 @@ from enten.github.client import GitHubClient
 from enten.github.models import CheckRunOutput
 from enten.llm.injection import validate_review_output
 from enten.reporting.checks import MAX_SUMMARY_LENGTH, MAX_TITLE_LENGTH
-from enten.reporting.comment import BOT_MARKER, Finding, PRReview, render_pr_comment
+from enten.reporting.comment import (
+    BOT_MARKER,
+    Finding,
+    PRReview,
+    render_pr_comment,
+    sanitize_markdown_block,
+    sanitize_markdown_inline,
+)
 from enten.test_gen import GeneratedTests, ReviewDraft
 from enten.verification.verify import VerificationResult
 
@@ -140,7 +147,7 @@ def _no_verifiable_findings_markdown(evidence: dict[str, object]) -> str:
         "<details>\n"
         "<summary>Evidence JSON</summary>\n\n"
         "```json\n"
-        f"{_truncate(json_text, 4000)}\n"
+        f"{sanitize_markdown_block(_truncate(json_text, 4000))}\n"
         "```\n\n"
         "</details>\n"
     )
@@ -184,7 +191,8 @@ def render_report(review_run: PRReviewRun) -> ReportOutput:
     )
 
     markdown = render_pr_comment(review_for_comment)
-    validated = validate_review_output(_plain_text_for_validation(markdown), list(available))
+    rendered_available = [sanitize_markdown_inline(path) for path in available]
+    validated = validate_review_output(_plain_text_for_validation(markdown), rendered_available)
 
     if not validated.verified:
         markdown = _no_verifiable_findings_markdown(evidence)

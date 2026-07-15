@@ -40,6 +40,9 @@ async def test_pipeline_replay_reuses_completed_key_without_effects(tmp_path: Pa
             self.calls += 1
             return EffectReceipt(state="posted", check_run_id="1", comment_id="2")
 
+        async def reconcile(self, payload: object) -> EffectReceipt:
+            raise AssertionError(payload)
+
     store = InMemoryReviewStore()
     generator = Generator()
     verifier = Verifier()
@@ -98,6 +101,10 @@ async def test_pipeline_does_not_retry_ambiguous_external_effect(tmp_path: Path)
         async def publish(self, payload: object) -> EffectReceipt:
             self.calls += 1
             raise TimeoutError("outcome unknown")
+
+        async def reconcile(self, payload: object) -> EffectReceipt:
+            _ = payload
+            return EffectReceipt(state="indeterminate", detail="outcome unknown")
 
     effects = Effects()
     dependencies = PipelineDependencies(
@@ -222,6 +229,9 @@ async def test_completed_checkpoint_replay_reconciles_queue_done_after_crash(
             self.calls += 1
             return EffectReceipt(state="posted")
 
+        async def reconcile(self, payload: object) -> EffectReceipt:
+            raise AssertionError(payload)
+
     class CrashAfterCompletedCheckpoint:
         completed_calls = 0
 
@@ -263,3 +273,75 @@ async def test_completed_checkpoint_replay_reconciles_queue_done_after_crash(
     assert replay.run.stage == "completed"
     assert stage_sink.completed_calls == 2
     assert generator.calls == verifier.calls == effects.calls == 1
+
+
+async def test_reporting_checkpoint_reconciles_durable_effect_after_crash(
+    tmp_path: Path,
+) -> None:
+    from enten.pipeline import InMemoryReviewStore, PipelineDependencies, execute_review
+    from enten.review.run import EffectReceipt, GeneratedFindings, ReviewRequest, ReviewRun
+
+    # Given
+    repository = tmp_path / "repo"
+    repository.mkdir()
+
+    class CrashBeforeCompletedStore(InMemoryReviewStore):
+        crashed = False
+
+        async def save(self, run: ReviewRun) -> None:
+            if run.stage == "completed" and not self.crashed:
+                self.crashed = True
+                raise RuntimeError("crash before completed checkpoint")
+            await super().save(run)
+
+    class Generator:
+        async def generate(self, proposal: object) -> GeneratedFindings:
+            return GeneratedFindings(findings=(), summary="clean")
+
+    class Verifier:
+        async def verify(self, request: object):
+            from enten.review.run import VerificationEvidence
+
+            return VerificationEvidence(exit_codes=(0,), command=("true",), log_paths=())
+
+    class Effects:
+        publish_calls = 0
+        reconcile_calls = 0
+
+        async def publish(self, payload: object) -> EffectReceipt:
+            self.publish_calls += 1
+            return EffectReceipt(state="posted", check_run_id="11", comment_id="22")
+
+        async def reconcile(self, payload: object) -> EffectReceipt:
+            self.reconcile_calls += 1
+            return EffectReceipt(state="posted", check_run_id="11", comment_id="22")
+
+    store = CrashBeforeCompletedStore()
+    effects = Effects()
+    request = ReviewRequest(
+        repository_id="public/repo",
+        pr_number=42,
+        head_sha="c" * 40,
+        repository_path=repository,
+        public_repository=True,
+        verification_command=("true",),
+    )
+    dependencies = PipelineDependencies(
+        store=store,
+        generator=Generator(),
+        verifier=Verifier(),
+        effects=effects,
+    )
+
+    # When
+    with pytest.raises(RuntimeError, match="before completed checkpoint"):
+        await execute_review(request, dependencies)
+    result = await execute_review(request, dependencies)
+
+    # Then
+    assert result.run.stage == "completed"
+    assert result.run.report_receipt == EffectReceipt(
+        state="posted", check_run_id="11", comment_id="22"
+    )
+    assert effects.publish_calls == 1
+    assert effects.reconcile_calls == 1

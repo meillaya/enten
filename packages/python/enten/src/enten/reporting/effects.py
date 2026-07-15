@@ -6,10 +6,12 @@ from enten.github.models import CheckRun, CheckRunOutput, Comment
 from enten.queue import (
     EffectState,
     complete_effect,
+    get_effect,
     mark_effect_indeterminate,
     prepare_effect,
     record_effect_attempt,
 )
+from enten.queue.persistence import EffectReceipt as LedgerEffectReceipt
 from enten.queue.persistence import JsonValue
 from enten.review.run import EffectReceipt, ReportPayload
 
@@ -65,6 +67,13 @@ class GitHubEffects:
             comment_url=comment.html_url,
         )
 
+    async def reconcile(self, payload: ReportPayload) -> EffectReceipt:
+        _ = payload
+        return EffectReceipt(
+            state="indeterminate",
+            detail="unfenced GitHub effects have no durable reconciliation ledger",
+        )
+
 
 @final
 class IndeterminateGitHubEffectError(RuntimeError):
@@ -92,6 +101,27 @@ class FencedGitHubEffects:
             comment_id=comment_id,
             check_run_url=check_url,
             comment_url=comment_url,
+        )
+
+    async def reconcile(self, payload: ReportPayload) -> EffectReceipt:
+        check = await get_effect(self._run_id, "github-check")
+        comment = await get_effect(self._run_id, "github-comment")
+        check_id = _succeeded_external_id(check)
+        comment_id = _succeeded_external_id(comment)
+        if check_id is not None and comment_id is not None:
+            return EffectReceipt(
+                state="posted",
+                check_run_id=check_id,
+                comment_id=comment_id,
+            )
+        if _safe_to_resume(check) and _safe_to_resume(comment):
+            return await self.publish(payload)
+        return EffectReceipt(
+            state="indeterminate",
+            detail=(
+                "durable GitHub receipts are incomplete "
+                f"(check={_effect_state(check)}, comment={_effect_state(comment)})"
+            ),
         )
 
     async def _publish_check(self, payload: ReportPayload) -> tuple[str, str | None]:
@@ -198,6 +228,28 @@ class NoopEffects:
     async def publish(self, payload: ReportPayload) -> EffectReceipt:
         _ = payload
         return EffectReceipt(state="skipped", detail="local review has no remote effects")
+
+    async def reconcile(self, payload: ReportPayload) -> EffectReceipt:
+        return await self.publish(payload)
+
+
+def _succeeded_external_id(receipt: LedgerEffectReceipt | None) -> str | None:
+    if receipt is None or receipt["state"] is not EffectState.SUCCEEDED:
+        return None
+    external_id = receipt["external_id"]
+    return external_id if isinstance(external_id, str) and external_id else None
+
+
+def _effect_state(receipt: LedgerEffectReceipt | None) -> str:
+    if receipt is None:
+        return "missing"
+    return str(receipt["state"])
+
+
+def _safe_to_resume(receipt: LedgerEffectReceipt | None) -> bool:
+    if receipt is None or receipt["state"] is EffectState.PREPARED:
+        return True
+    return _succeeded_external_id(receipt) is not None
 
 
 __all__ = [

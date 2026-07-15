@@ -51,6 +51,36 @@ describe("computeIdempotencyKey", () => {
     // Then
     expect(redeliveryKey).toBe(originalKey);
   });
+
+  it("preserves identity when a repository is renamed", () => {
+    // Given
+    const renamedRepository = {
+      ...envelope,
+      repository: { ...envelope.repository, full_name: "octocat/renamed" },
+    };
+
+    // When
+    const originalKey = computeIdempotencyKey(envelope);
+    const renamedKey = computeIdempotencyKey(renamedRepository);
+
+    // Then
+    expect(renamedKey).toBe(originalKey);
+  });
+
+  it("distinguishes repositories with different immutable IDs", () => {
+    // Given
+    const differentRepository = {
+      ...envelope,
+      repository: { ...envelope.repository, id: envelope.repository.id + 1 },
+    };
+
+    // When
+    const originalKey = computeIdempotencyKey(envelope);
+    const differentKey = computeIdempotencyKey(differentRepository);
+
+    // Then
+    expect(differentKey).not.toBe(originalKey);
+  });
 });
 
 describe("JobsQueue", () => {

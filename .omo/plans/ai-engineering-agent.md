@@ -25,7 +25,7 @@ define the shipped contract.
 
 ## TL;DR
 
-> **Quick Summary**: Build a GitHub-integrated AI engineering agent (CLI + GitHub App) that ingests PRs, indexes repos with tree-sitter, retrieves context via pgvector, runs static + security analysis in a Docker/E2B sandbox, generates patches + tests via pluggable LLM providers (OpenAI/OpenRouter/Ollama), verifies changes with deterministic test-exit-code verdicts, and posts evidence-grounded PR comments and GitHub Checks. Twenty-two components, hybrid Python + TypeScript monorepo, devenv.sh hermetic shell, TDD with eval harness + fixture corpus for LLM quality.
+> **Quick Summary**: Ship a self-hosted GitHub pull-request reviewer with signed TypeScript ingress, fenced Postgres work, exact public checkouts, a Docker-only verifier, deterministic three-run verdicts, and crash-fenced GitHub effects. Model, patch, indexing, and eval components remain explicit Python library/CLI surfaces rather than implicit production planners.
 >
 > **Deliverables**:
 > - Hybrid monorepo (`pnpm` workspaces + `uv` workspace) at `/home/mei/projects/enten`
@@ -37,7 +37,7 @@ define the shipped contract.
 > - 10+ PR fixture corpus + eval harness (`enten eval --corpus`)
 > - CI matrix on the bot's own code + CI smoke-eval on 3-fixture subset
 > - GitHub App installation manifest + permission scope doc (`contents: write` denied)
-> - Demo: PR opened on forked demo repo → bot posts review + Check within 2 minutes, twice yields byte-identical verdict
+> - Hermetic HTTPie verifier target/source manifest and three-run integration contract; live GitHub posting is credential-dependent and not claimed
 >
 > **Estimated Effort**: XL (multi-month, comprehensive plan)
 > **Parallel Execution**: YES — 7 implementation waves + 1 final review wave; 4–7 tasks per wave
@@ -61,7 +61,7 @@ Build a GitHub-integrated AI engineering assistant that reviews PRs, finds bugs,
 **Technical stack (locked)**
 - Hybrid Python + TypeScript monorepo (`pnpm` + `uv`)
 - LLM providers — **2 implementations only**: `OpenAICompatProvider` (OpenAI / OpenRouter / LM Studio / llama.cpp-server) + `OllamaProvider`. Anthropic via OpenRouter routing.
-- Sandbox — **2 implementations only**: `DockerSandbox` (local dev) + `E2BSandbox` (hosted). Daytona dropped (redundant).
+- Sandbox — `DockerSandbox` is the sole verified backend. The legacy `e2b` selector fails closed; Daytona is unsupported.
 - Vector store: Postgres + pgvector
 - Verification sink: GitHub Checks API (idempotent) + PR comments with file:line evidence
 - Test strategy: TDD (`pytest` + `Vitest`); eval harness for LLM quality
@@ -100,10 +100,10 @@ Build a GitHub-integrated AI engineering assistant that reviews PRs, finds bugs,
 
 **High (resolved in plan):**
 - H1 Observability stack — component 13 (structlog/pino + OTel + Jaeger)
-- H2 Demo repo selection — task 15 builds fork + selection doc first
+- H2 Demo target — task 15 pins a public HTTPie source/tree contract and verifier image manifest
 - H3 Pluggable LLM scope — 2 implementations only
-- H4 Sandbox scope — 2 implementations only (drop Daytona)
-- H5 Context window mgmt — `MAX_PR_DIFF_TOKENS=50_000` + per-file fallback
+- H4 Sandbox scope — Docker only; unsupported selectors fail closed
+- H5 Context bounding — indexing and retrieval apply their own explicit file/query limits
 - H6 LLM output validation — `pydantic`/`zod` schemas + 15-iter circuit breaker
 - H7 Secrets management — `.env.example`, typed config, log redaction
 
@@ -142,9 +142,9 @@ Ship a GitHub-integrated AI engineering agent that, on every PR opened on a demo
 - [ ] `pytest` + `vitest --coverage` both show ≥ 80% on `src/enten/`
 - [ ] `enten eval --corpus tests/fixtures/prs/` reports ≥ 0.7 precision and ≥ 0.6 recall
 - [ ] Opening the same PR through the bot twice produces byte-identical pass/fail verdicts (determinism fixture)
-- [ ] Bot posts a GitHub Check Run + a PR comment within 2 minutes of opening a PR on the demo repo fork
+- [ ] Credentialed operator check: a public test PR receives one Check Run and one marker comment; not a repository-only release claim
 - [ ] Bot's GitHub App permissions documented; `contents: write` absent
-- [ ] No secrets appear in logs (`grep` against `LANGCHAIN_API_KEY|GITHUB_TOKEN|OPENAI_API_KEY|E2B_API_KEY|PRIVATE_KEY` returns 0 matches in `*.log`)
+- [ ] No secrets appear in logs (`grep` against `LANGCHAIN_API_KEY|GITHUB_TOKEN|OPENAI_API_KEY|PRIVATE_KEY` returns 0 matches in `*.log`)
 - [ ] Cost report `enten cost --pr N` shows tokens + USD per PR
 - [ ] Jaeger UI (port 16686) shows one trace per PR review with 9+ spans
 
@@ -157,7 +157,7 @@ Ship a GitHub-integrated AI engineering agent that, on every PR opened on a demo
 6. **Idempotency** — one review per `(repo_id, pr_number, commit_sha)`, webhook dedup
 7. **Observability** — one OTel trace per PR with structured logs
 8. **2 LLM implementations** (OpenAI-compat + Ollama); Anthropic via OpenRouter
-9. **2 sandbox implementations** (Docker + E2B); dropped Daytona
+9. **One verified sandbox implementation** (Docker); unsupported E2B selection fails closed
 10. **Flaky test handling** — 3/3 = pass, 2/3 = accepted flaky, ≤1/3 = fail
 11. **Bot ignores own PRs**
 12. **TDD** for deterministic code; **eval** for LLM quality
@@ -165,7 +165,7 @@ Ship a GitHub-integrated AI engineering agent that, on every PR opened on a demo
 ### Must NOT Have (Guardrails from Metis)
 - ❌ Multi-tenant auth, billing, or org management
 - ❌ Web dashboard / admin UI
-- ❌ Daytona sandbox (redundant with E2B)
+- ❌ Unverified hosted sandbox adapters
 - ❌ LLM fine-tuning (pretrained only)
 - ❌ `contents: write` for the bot's GitHub App
 - ❌ Patches pushed to PR branches (sandbox-only)
@@ -173,7 +173,7 @@ Ship a GitHub-integrated AI engineering agent that, on every PR opened on a demo
 - ❌ Turkish-pride / AI-slop patterns (no over-abstraction, no excessive comments, no `temp`/`data`/`result` generic names, no premature extraction to utilities)
 - ❌ Tree-sitter grammars beyond Python + TypeScript for v1 (others deferred)
 - ❌ LLM implementations beyond `OpenAICompatProvider` + `OllamaProvider` (Anthropic is accessed via OpenRouter routing on OpenAI-compat)
-- ❌ More than 2 sandbox backends
+- ❌ Additional sandbox backends without an approved dependency and equivalent lifecycle tests
 
 ---
 
@@ -222,7 +222,7 @@ Wave 2 — Intake path (5 tasks):
   T12  GitHub API client (Py) with rate limit + retry + bot-self detection
   T13  SandboxProvider interface + DockerSandbox impl (the critical-path bottleneck)
   T14  Test output parsers (pytest --json-report, vitest --json, semgrep --json)
-  T15  Demo repo fork + docs/demo-repo.md + fixture corpus scaffolding (starts in W2 for parallel)
+  T15  Hermetic HTTPie target/source manifest + fixture corpus scaffolding
 
 Wave 3 — Static + Indexing — FIRST LANDMARK (bot comments without LLM):
   T16  Tree-sitter multi-language indexer (Python + TS grammars, locked v1)
@@ -232,7 +232,7 @@ Wave 3 — Static + Indexing — FIRST LANDMARK (bot comments without LLM):
   T20  Security checks (gitleaks, bandit) + integration
   T21  PR comment formatter + Checks API reporter (no-LLM mode)
   T22  Flaky test handler (3/3 pass, 2/3 accepted flaky, ≤1/3 fail)
-  T23  Bot GitHub App registration + permission scope doc + bot-self-ignore
+  T23  GitHub App manifest template + permission scope doc + bot-self-ignore
   — BOT CAN NOW REVIEW PRs WITH STATIC + SECURITY + CHECKS API (NO LLM) —
 
 Wave 4 — LLM provider + observability (4 tasks):
@@ -256,7 +256,7 @@ Wave 6 — Eval + second sandbox (3 tasks):
   T36  Fixture corpus expansion to 10+ PRs (known bugs, no-false-positive, security, prompt injection)
   T37  Eval harness CLI (precision/recall/FPR/cost/latency + baseline report)
   T38  CI eval smoke (3-fixture subset, gates merge)
-  T39  E2BSandbox implementation (second hosted sandbox backend)
+  T39  Unsupported E2B selector fails closed
 
 Wave 7 — Deploy + demo (3 tasks):
   T40  Dockerfile production (multi-stage) + Fly.io / Railway configs
@@ -304,17 +304,17 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 - [x] 2. devenv.sh Nix shell + Docker Compose stack — Postgres+pgvector, Jaeger, app, optional Ollama
 - [x] 3. Typed configuration — pydantic-settings (Py) + zod+dotenv (TS) + .env.example + structlog/pino redaction filters
 - [x] 4. Structured logging — structlog (Py) + pino (TS), JSON output, correlation IDs, run-id generation
-- [x] 5. OpenTelemetry wiring — SDK bootstrap (Py + TS) + Jaeger exporter + Prometheus /metrics + trace-context propagation
+- [x] 5. OpenTelemetry wiring — SDK bootstrap (Py + TS), edge Prometheus endpoint, and trace-context propagation
 - [x] 6. Test infrastructure — pytest + pytest-asyncio + pytest-cov + testcontainers + Vitest + @vitest/coverage-v8 + determinism fixture stub + coverage gate (80%)
 - [x] 7. CI matrix — GitHub Actions workflow (Py 3.11/3.12 and Node 22 on Linux) for the bot's own code
 - [x] 8. Checksum migration runner + Postgres schemas — jobs, pr_reviews, llm_calls, fixtures; CHECK constraints and indexes
 - [x] 9. GitHub App webhook receiver (TS) — manifest, signature validation, 5s return, /health endpoint, /metrics
 - [x] 10. Postgres-backed job queue — SELECT FOR UPDATE SKIP LOCKED, state machine (queued → indexing → reviewing → testing → verifying → commenting → done | failed), idempotency keys
 - [x] 11. Worker process — graceful shutdown, exponential-backoff retry, crash recovery (mark in_progress > N min as failed)
-- [x] 12. GitHub API client (Py) — auth, rate-limit handling (primary + secondary tokens), bot-self detection (committer email / app id)
+- [x] 12. GitHub API client (Py) — auth, rate-limit handling, and slug/type-based bot comment ownership
 - [x] 13. SandboxProvider interface + DockerSandbox — create, run, upload, destroy; hermetic image per project; 2-min default timeout
 - [x] 14. Test + analysis output parsers — pytest JUnit XML, vitest JSON, semgrep JSON, gitleaks JSON; exit code in all
-- [x] 15. Demo repo fork + docs/demo-repo.md + fixture corpus scaffolding — pick small known OSS repo, fork, document rationale, lay out tests/fixtures/prs/
+- [x] 15. Hermetic HTTPie source/tree manifest + verifier contract + independent fixture corpus
 - [x] 16. Tree-sitter multi-language indexer — Python + TS grammars, language-agnostic AST chunking, scope-aware splitting
 - [x] 17. pgvector schema + embedding generator + indexer pipeline — HNSW index, batched inserts, file-hash dedup
 - [x] 18. Retrieval layer — BM25 + pgvector hybrid with reranker; per-query token budget
@@ -322,7 +322,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 - [x] 20. Security checks — gitleaks (secrets) + bandit (Py) + semgrep security rules, JSON output, file:line attribution
 - [x] 21. PR comment formatter + Checks API reporter — markdown with collapsible sections; Checks API run with conclusion
 - [x] 22. Flaky test handler — 3/3 pass, 2/3 accepted flaky, ≤1/3 fail
-- [x] 23. GitHub App registration + permission scope doc + bot-self-ignore — manifest at packages/ts/app/github-app.yml, scopes pull_requests:write, checks:write, metadata:read, NO contents:write
+- [x] 23. GitHub App manifest template + permission scope doc + bot-self-ignore; live registration is operator-owned
 - [x] 24. LLMProvider interface — complete() / stream() / count_tokens() / tool_use(); pydantic schemas for all params
 - [x] 25. OpenAICompatProvider — covers OpenAI, OpenRouter (Anthropic routed here), LM Studio, llama.cpp-server; tool-use, streaming, token counting
 - [x] 26. OllamaProvider — native Ollama API; tool-use via Ollama's function-calling (Qwen2.5 / Llama3.1+)
@@ -536,7 +536,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 - [ ] **3. Typed configuration — pydantic-settings (Py) + zod+dotenv (TS) + .env.example + structlog/pino redaction filters**
 
   **What to do**:
-  - Py side: `packages/python/enten/src/enten/config.py` — `Settings(BaseSettings)` with `model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")`. Fields: `github_app_id`, `github_app_private_key_path`, `github_webhook_secret`, `llm_provider` (enum: `"openai-compat" | "ollama"`), `llm_openai_base_url` (default `https://api.openai.com/v1`), `llm_openai_api_key`, `llm_ollama_base_url` (default `http://localhost:11434`), `sandbox_provider` (enum: `"docker" | "e2b"`), `e2b_api_key`, `database_url` (default `postgresql+asyncpg://enten@localhost/enten`), `max_pr_diff_tokens` (default 50000), `per_pr_cost_cap_usd` (default 0.50), `otel_endpoint` (default `http://localhost:4317`), `committer_email` (for bot self-ignore), `prometheus_metrics_port` (default 9090). All `Optional[...]` with None defaults where secrets are involved.
+  - Py side: `packages/python/enten/src/enten/config.py` — `Settings(BaseSettings)` with `model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")`. Fields: `github_app_id`, `github_app_private_key_path`, `github_webhook_secret`, `llm_provider` (enum: `"openai-compat" | "ollama"`), `llm_openai_base_url` (default `https://api.openai.com/v1`), `llm_openai_api_key`, `llm_ollama_base_url` (default `http://localhost:11434`), `sandbox_provider` (enum: `"docker" | "e2b"`), `database_url` (default `postgresql+asyncpg://enten@localhost/enten`), `per_pr_cost_cap_usd` (default 0.50), and `otel_endpoint` (default `http://localhost:4317`). All `Optional[...]` with None defaults where secrets are involved.
   - TS side: `packages/ts/app/src/config.ts` — `Config` zod schema covering webhook receiver-specific env (`GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, `DATABASE_URL`, `PORT`). `parse(rawEnv)` returns `{ ok: true, value }` or `{ ok: false, error }`.
   - Create `.env.example` at repo root listing every env var with placeholder values (`changeme`, `sk-...`).
   - Add `.env` to `.gitignore` (already covered in T01; verify).
@@ -569,7 +569,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
   **Acceptance Criteria**:
   - [ ] `uv run pytest packages/python/enten/tests/test_config.py` → 6+ tests pass
   - [ ] `pnpm --filter @enten/app vitest run tests/config.test.ts` → 4+ tests pass
-  - [ ] `uv run python -c "from enten.config import Settings; s = Settings(); print(s.max_pr_diff_tokens)"` prints `50000`
+  - [ ] `uv run python -c "from enten.config import Settings; s = Settings(); print(s.llm_max_iterations)"` prints `15`
   - [ ] `.env.example` lists every env var consumed in Settings and Config (no orphans)
   - [ ] `git ls-files | grep -E '^\.env$'` returns 0 matches (no `.env` committed)
 
@@ -579,10 +579,10 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
     Tool: Bash (devenv shell)
     Preconditions: Task 1 complete; `.env` file at `/tmp/test.env` with custom values
     Steps:
-      1. Copy `.env.example` to `/tmp/test.env` and set `MAX_PR_DIFF_TOKENS=99999`
-      2. `cd packages/python/enten && uv run python -c "from enten.config import Settings; s = Settings(_env_file='/tmp/test.env'); assert s.max_pr_diff_tokens == 99999"` → exits 0
+      1. Copy `.env.example` to `/tmp/test.env` and set `LLM_MAX_ITERATIONS=9`
+      2. `cd packages/python/enten && uv run python -c "from enten.config import Settings; s = Settings(_env_file='/tmp/test.env'); assert s.llm_max_iterations == 9"` → exits 0
     Expected Result: Custom value loaded from file
-    Failure Indicators: `Settings()` returns 50000 instead of 99999
+    Failure Indicators: `Settings()` ignores the explicit env-file override
     Evidence: `.omo/evidence/task-1-py-envfile.txt`
 
   **Scenario 2: TS config parses + rejects**
@@ -697,99 +697,17 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 
 ---
 
-### Task 5 — OpenTelemetry wiring
+### Task 5 — OpenTelemetry and edge metrics
 
-- [ ] **5. OpenTelemetry wiring — SDK bootstrap (Py + TS) + Jaeger exporter + Prometheus /metrics + trace-context propagation**
+- [x] **5. OpenTelemetry and edge metrics — Python and TypeScript traces, TypeScript `/metrics`**
 
-  **What to do**:
-  - Py side: `packages/python/enten/src/enten/otel.py` exposing `configure_otel(service_name)` and `tracer()`. Use `opentelemetry-sdk` with `OTLPSpanExporter` pointing at `OTEL_ENDPOINT` (default `http://localhost:4317` for Jaeger); `BatchSpanProcessor`; `Resource.create({SERVICE_NAME: service_name, SERVICE_VERSION: __version__})`. Auto-instrument `httpx` and `asyncpg` via `opentelemetry-instrumentation-*`. Propagate W3C TraceContext across queue boundaries via `opentelemetry-instrumentation-asyncio`.
-  - TS side: `packages/ts/app/src/otel.ts` with `@opentelemetry/sdk-node` NodeSDK; OTLP gRPC exporter; register with `NodeSDK({traceExporter: new OTLPTraceExporter({ url: env.OTEL_ENDPOINT || 'http://localhost:4317' })})`. Auto-instrument express (Hono equivalent: `hono-otel` or manual middleware).
-  - Py side: `packages/python/enten/src/enten/metrics.py` exposing `MetricsRegistry` (Prometheus client) and `start_metrics_server(port)`. Counters: `pr_reviews_total{result=passed|failed|errored}`; Histograms: `llm_call_duration_seconds{model}`, `sandbox_exec_duration_seconds{sandbox}`, `pr_review_duration_seconds`. Default port 9090 from config.
-  - TS side: `packages/ts/app/src/metrics.ts` exposing `/metrics` HTTP endpoint (text/plain in Prometheus exposition format) on a separate port `METRICS_PORT` (default 9091).
-  - Add manifest to docker-compose (T02): nothing new; the existing Jaeger service already exposes `4317` for OTLP.
-  - Tests: Py `test_otel.py` — asserts `TracerProvider` configured, span exported (use `InMemorySpanExporter`); `test_metrics.py` — asserts registry has counters/histograms, `/metrics` body contains `pr_reviews_total`.
-  - TS `tests/otel.test.ts` — asserts SDK initialized, exporter configured (mock).
-
-  **Must NOT do**:
-  - Do not use console exporters in production paths (only in test).
-  - Do not introduce a third telemetry backend (e.g., Honeycomb, Datadog) — Jaeger + Prometheus only.
-  - Do not auto-instrument `sqlalchemy` from the DB layer (use the asyncpg instrumentation explicitly per `pkg_resources` checks).
-  - Do not send sensitive span attributes (file content).
-
-  **Recommended Agent Profile**:
-  - **Category**: `unspecified-high`
-  - **Reason**: OTel has many configuration pitfalls (auto-instrumentation ordering, batch span processor shutdown hooks). Mid-level plan needs explicit docs references.
-  - **Skills**: none (well-documented OTel API)
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 1
-  - **Blocks**: T10 (queue jobs create spans), T34 (sandbox exec creates spans), F3 (Jaeger trace check)
-  - **Blocked By**: T02 (Jaeger in compose), T04 (run_id used as `correlation_id`), T03 (OTEL_ENDPOINT from config)
-
-  **References**:
-  - OTel Python docs: https://opentelemetry.io/docs/languages/python/instrumentation/ — `OTLPSpanExporter` + `BatchSpanProcessor` pattern
-  - OTel Python auto-instrumentation: https://opentelemetry.io/docs/zero-code/python/configuration/ — `opentelemetry-instrument` CLI
-  - OTel Node.js: https://opentelemetry.io/docs/languages/js/getting-started/nodejs/ — `NodeSDK` + OTLP exporter
-  - Prometheus client Py: https://github.com/prometheus/client_python — `start_http_server` pattern
-  - prom-client TS: https://github.com/siimon/prom-client — `register.contentAsString`
-
-  **Acceptance Criteria**:
-  - [ ] `docker compose up -d --wait jaeger postgres` exits 0
-  - [ ] `uv run pytest packages/python/enten/tests/test_otel.py packages/python/enten/tests/test_metrics.py` → 6+ tests pass
-  - [ ] `pnpm --filter @enten/app vitest run tests/otel.test.ts` → 3+ tests pass
-  - [ ] After running an OTel-instrumented Py script that emits a span, Jaeger UI at `http://localhost:16686` shows the service `enten`
-  - [ ] `curl http://localhost:9090/metrics | grep pr_reviews_total` shows the counter
-
-  **QA Scenarios (MANDATORY)**:
-
-  **Scenario 1: Py span exported to Jaeger**
-    Tool: Bash + Jaeger API (httpx + docker compose)
-    Preconditions: T02 compose up; `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
-    Steps:
-      1. `uv run python -c "from enten.otel import configure_otel, tracer; configure_otel('enten-cli'); with tracer().start_as_current_span('demo-test'): pass"` → exits 0
-      2. `sleep 5` (allow OTLP export)
-      3. `curl -sS "http://localhost:16686/api/services" | jq '.data[].name' | grep enten-cli` → prints `"enten-cli"`
-      4. `curl -sS "http://localhost:16686/api/traces?service=enten-cli&limit=1" | jq '.data | length'` → prints `≥ 1`
-    Expected Result: Jaeger ingests the test span
-    Failure Indicators: Service not listed; empty traces
-    Evidence: `.omo/evidence/task-5-py-jaeger.txt`
-
-  **Scenario 2: Py /metrics responds with counters**
-    Tool: Bash
-    Preconditions: `start_metrics_server(9090)` has run
-    Steps:
-      1. Start server in background, increment a counter, fetch metrics
-      2. `curl -sS http://localhost:9090/metrics | grep '^pr_reviews_total'` → returns `pr_reviews_total{result="passed"} 1.0` (or similar)
-    Expected Result: Prometheus format output
-    Failure Indicators: 404; missing counter
-    Evidence: `.omo/evidence/task-5-py-metrics.txt`
-
-  **Scenario 3: TS NodeSDK initializes + /metrics route**
-    Tool: Bash
-    Preconditions: TS unit tests cover init
-    Steps:
-      1. `pnpm --filter @enten/app vitest run tests/otel.test.ts` → all pass, including a span assertion via in-memory exporter
-      2. Manual: start the dev server (`pnpm dev`), `curl http://localhost:9091/metrics` → 200 text/plain with `# HELP pr_reviews_total`
-    Expected Result: Metrics endpoint works
-    Failure Indicators: Crash on init; 404
-    Evidence: `.omo/evidence/task-5-ts-metrics.txt`
-
-  **Scenario 4 (Failure): OTel exporter endpoint unreachable → batch processor retries & warns, does not hang**
-    Tool: Bash (Py)
-    Preconditions: OTel configured with a deliberately wrong `OTEL_ENDPOINT`
-    Steps:
-      1. `OTEL_ENDPOINT=http://127.0.0.1:1 OTEL_BSP_SCHEDULE_DELAY=200 uv run python -c "from enten.otel import configure_otel, tracer; configure_otel('demo'); with tracer().start_as_current_span('x'): pass; from opentelemetry.sdk.trace.export import BatchSpanProcessor; ..."` → exits 0 within 3 seconds; log line "exporter unreachable, dropping batch" appears
-    Expected Result: SDK does not hang on exporter failure; logs warn + continues
-    Failure Indicators: process hangs; uncaught exception
-    Evidence: `.omo/evidence/task-5-exporter-down.txt`
-
-  **Commit**: YES
-  - Message: `feat(otel): add OpenTelemetry SDK + Jaeger exporter + Prometheus /metrics (Py + TS)`
-  - Files: packages/python/enten/src/enten/otel.py, packages/python/enten/src/enten/metrics.py, packages/python/enten/tests/test_otel.py, packages/python/enten/tests/test_metrics.py, packages/ts/app/src/otel.ts, packages/ts/app/src/metrics.ts, packages/ts/app/tests/otel.test.ts
-  - Pre-commit: `pytest packages/python/enten/tests/test_otel.py packages/python/enten/tests/test_metrics.py`
-
----
+  Both process roles export traces through OTLP. The authenticated trace carrier
+  links edge enqueue spans to worker and pipeline spans. The TypeScript edge
+  serves Prometheus metrics and `/health` on `METRICS_PORT=9091`; Python has no
+  standalone metrics listener. `test_otel.py` verifies Python span export with
+  an in-memory exporter, and the TypeScript server/metrics tests verify the
+  HTTP surface. Jaeger and the edge metrics endpoint are the only shipped
+  telemetry backends.
 
 ### Task 6 — Test infrastructure
 
@@ -1104,7 +1022,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
   - [ ] `pnpm --filter @enten/app vitest run tests/webhook.test.ts` → 6+ tests pass
   - [ ] `pnpm --filter @enten/app vitest run tests/idempotency.test.ts` → 1+ test passes (using testcontainers Postgres)
   - [ ] Boot server: `pnpm --filter @enten/app dev`; `curl http://localhost:3000/health` → 200 `{status:"ok"}`
-  - [ ] `curl http://localhost:3001/metrics` → 200 Prometheus text
+  - [ ] `curl http://localhost:9091/metrics` → 200 Prometheus text
   - [ ] `curl -X POST http://localhost:3000/webhook -H 'X-GitHub-Event: pull_request' -H 'X-Hub-Signature-256: bad' -d '{}'` → 401
 
   **QA Scenarios (MANDATORY)**:
@@ -1135,7 +1053,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
     Preconditions: server running
     Steps:
       1. `curl -fsS http://localhost:3000/health | jq .status` → "ok"
-      2. `curl -fsS http://localhost:3001/metrics | grep pr_reviews_total` → counter present
+      2. `curl -fsS http://localhost:9091/metrics | grep pr_reviews_total` → counter present
     Expected Result: both endpoints up
     Failure Indicators: 5xx; missing metric
     Evidence: `.omo/evidence/task-9-health-metrics.txt`
@@ -1334,7 +1252,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
     - On 403 with `X-RateLimit-Remaining: 0`, sleep until `X-RateLimit-Reset - now()`, then retry.
     - On 429 (secondary rate limit), exponential backoff with jitter (max 5 attempts).
   - Bot self-detection:
-    - `is_bot_author(pr) → bool` — checks `pr.user.login == github_app_slug` and `commit.author.email.endswith('@users.noreply.github.com')` matches bot's `committer_email` config.
+    - `is_bot_author(pr) → bool` — checks `pr.user.login == github_app_slug` and `commit.author.email.endswith('@users.noreply.github.com')` matches the configured App slug and bot account type.
     - Worker filters out own PRs before enqueueing (or at start of pipeline).
   - Tests: `tests/test_github_client.py` uses `respx` to mock httpx:
     - get_pull_request success, 404, 403 rate-limit (mocked `X-RateLimit-*`), bot-self detection (true/false), idempotent comment (POST then PATCH), check_run create+update.
@@ -1366,7 +1284,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
   **Acceptance Criteria**:
   - [ ] `uv run pytest packages/python/enten/tests/test_github_client.py` → 6+ tests pass
   - [ ] Code path for rate-limit 403 → returns success after sleeping past reset (uses `freezegun` or `time.sleep(0)` in test)
-  - [ ] Bot-self detection: `pr.user.login='enten-bot[bot]'` AND `committer_email='bot@enten.example'` → returns True
+  - [ ] Bot-self detection: `pr.user.login='enten-bot[bot]'` with slug `enten-bot` → returns True
   - [ ] Idempotent comment: 2nd call within same bot session updates the same comment (via `update_check_run`/`PATCH`)
 
   **QA Scenarios (MANDATORY)**:
@@ -1427,7 +1345,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
     - Use `--read-only --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=256 --memory=4g --cpus=2.0` for hardening.
     - Pull image from local registry; if absent, `docker pull` first.
     - Pull custom Semgrep rules into `/workspace/.semgrep-rules/` from T19.
-  - `E2BSandbox` interface stub here (full impl is T39).
+  - Keep the unsupported `e2b` selector as a fail-closed configuration error (T39).
   - Settings selector: `Settings().sandbox_provider` chooses impl.
   - Tests `tests/test_sandbox_docker.py`:
     - Pulls public `python:3.12-slim` for testing.
@@ -1584,94 +1502,21 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 
 ---
 
-### Task 15 — Demo repo fork + docs/demo-repo.md + fixture corpus scaffolding
+### Task 15 — Hermetic HTTPie target contract and fixture corpus
 
-- [ ] **15. Demo repo fork + docs/demo-repo.md + fixture corpus scaffolding — pick small known OSS repo, fork, document rationale, lay out tests/fixtures/prs/**
+- [x] **15. Hermetic HTTPie target contract and fixture corpus**
 
-  **What to do**:
-  - Select demo repo: candidate `httpie/cli` (Py, ~30k LOC, test suite, has Gitleaks + bandit-friendly code). Document selection rationale in `docs/demo-repo.md`:
-    - LOC: small enough to index in <1 min
-    - Has pytest + GitHub Actions
-    - Permissively licensed (BSD-3)
-    - Has known historical bug-fix PRs (for fixture replays)
-  - Fork to a personal GH account via `gh repo fork httpie/cli --clone=false --remote=true` (manual once; record the URL).
-  - Create `tests/fixtures/prs/{bug,no_false_positive,missing_test,security,prompt_injection}/` skeleton dirs (no actual fixtures yet — T36 fills them).
-  - Create `tests/fixtures/determinism/pr.json` placeholder (a static PR JSON, used by T37's determinism test).
-  - Add `tests/fixtures/.gitignore` allowing `*.json` (not secrets, not payloads).
-  - Document in `docs/demo-repo.md`:
-    - Why this repo
-    - How to fork locally (`gh repo fork`)
-    - How to obtain a GitHub App installation URL
-    - Demo flow: open PR on fork → bot comments within 2 min
+  `docker/verifier-httpie/source.json` records the public upstream repository,
+  commit, and Git tree. The verifier image contains a hash-locked dependency
+  set and trusted offline test selector. Integration tests accept only a local
+  checkout matching that manifest, run three fresh sandboxes per candidate,
+  and clean their images and containers.
 
-  **Must NOT do**:
-  - Do not include real user data.
-  - Do not pick a >100k-LOC repo.
-  - Do not copy any private repo content.
-  - Do not include fixtures with secrets (redact first).
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Reason**: Documentation + directory scaffold + one `gh` call (manual).
-  - **Skills**: none
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 2
-  - **Blocks**: T16 (indexer runs on demo repo), T19 (semgrep on demo repo), T36 (fixtures reference demo repo)
-  - **Blocked By**: T01
-
-  **References**:
-  - gh CLI fork: https://cli.github.com/manual/gh_repo_fork — args
-  - httpie repo license: https://github.com/httpie/cli/blob/master/LICENSE — BSD-3
-
-  **Acceptance Criteria**:
-  - [ ] `docs/demo-repo.md` exists and lists repo URL + selection criteria + line count + license
-  - [ ] `tests/fixtures/prs/{bug,no_false_positive,missing_test,security,prompt_injection}/` exists (5 subdirs)
-  - [ ] `tests/fixtures/determinism/pr.json` exists with placeholder PR JSON
-  - [ ] `docs/demo-repo.md` includes the `gh repo fork` invocation a human would run later (no automated fork in CI)
-
-  **QA Scenarios (MANDATORY)**:
-
-  **Scenario 1: Demo repo doc lint**
-    Tool: Bash
-    Preconditions: docs/demo-repo.md written
-    Steps:
-      1. `test -f docs/demo-repo.md && wc -l docs/demo-repo.md`
-      2. `grep -E 'github.com/.*httpie|httpie/cli' docs/demo-repo.md` → at least 1 match
-      3. `grep -E 'BSD|Apache|MIT' docs/demo-repo.md` → at least 1 match (license mentioned)
-    Expected Result: Doc mentions repo + license
-    Failure Indicators: empty file; missing license mention
-    Evidence: `.omo/evidence/task-15-doc.txt`
-
-  **Scenario 2: Fixture dir tree**
-    Tool: Bash
-    Preconditions: scaffold laid
-    Steps:
-      1. `ls -1 tests/fixtures/prs/` → 5 subdirs (bug, no_false_positive, missing_test, security, prompt_injection)
-      2. `ls -1 tests/fixtures/determinism/` → `pr.json`
-    Expected Result: 5 dirs + 1 file present
-    Failure Indicators: missing dirs
-    Evidence: `.omo/evidence/task-15-fixtures-scaffold.txt`
-
-  **Scenario 3 (Failure): Fixture with real secret (intentional test) is rejected by gitleaks**
-    Tool: Bash (`gitleaks`)
-    Preconditions: gitleaks installed; intentional secret placed in a test fixture
-    Steps:
-      1. `echo 'AKIA0000000000000000' > tests/fixtures/prs/security/test-secret.txt`
-      2. `gitleaks detect --no-git --source tests/fixtures --report-path /tmp/gl.json` → exit 1 (caught)
-      3. `rm tests/fixtures/prs/security/test-secret.txt` (cleanup) and re-run → exit 0
-    Expected Result: real secrets flagged; intentional fixtures never leave residue
-    Evidence: `.omo/evidence/task-15-secret-flag.txt`
-
-  **Commit**: YES
-  - Message: `docs(demo): select demo repo (httpie/cli), scaffold PR fixture dirs, document rationale`
-  - Files: docs/demo-repo.md, tests/fixtures/prs/*/README.md (placeholders), tests/fixtures/determinism/pr.json, tests/fixtures/.gitignore
-  - Pre-commit: (none; doc only)
-
----
-
-## Task Details — Wave 3 (Static + Indexing + LANDMARK)
+  `docs/demo-repo.md` documents an optional credentialed GitHub demonstration,
+  but the repository release does not create a fork, register or install a
+  GitHub App, publish the image, or claim live GitHub evidence. The independent
+  fixture corpus covers bug, clean, missing-test, security, and prompt-injection
+  cases without copying private data or embedding live credentials.
 
 ### Task 16 — Tree-sitter multi-language indexer
 
@@ -1720,7 +1565,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 
   **Scenario 1: Index the demo repo and count chunks**
     Tool: Bash (Py + git)
-    Preconditions: demo repo forked and cloned locally
+    Preconditions: local checkout matches the pinned HTTPie source manifest
     Steps:
       1. `cd tests/fixtures/synthetic_repo && git init && git add . && git commit -m initial`
       2. `uv run python -m enten.indexer.index ./tests/fixtures/synthetic_repo --lang=python` → prints chunk count, exits 0
@@ -1781,7 +1626,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
   **Must NOT do**:
   - Do not call OpenAI in tests without mocking.
   - Do not block on a single embedding call (batch ≥ 8 to amortize).
-  - Do not exceed `MAX_PR_DIFF_TOKENS` budget during indexing.
+  - Do not exceed the indexer’s explicit per-file and repository bounds.
 
   **Recommended Agent Profile**:
   - **Category**: `quick`
@@ -2223,85 +2068,17 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 
 ---
 
-### Task 23 — GitHub App registration + permission scope doc + bot-self-ignore
+### Task 23 — GitHub App manifest, permission contract, and self-ignore
 
-- [ ] **23. GitHub App registration + permission scope doc + bot-self-ignore — manifest at packages/ts/app/github-app.yml, scopes pull_requests:write, checks:write, metadata:read, NO contents:write**
+- [x] **23. GitHub App manifest, permission contract, and self-ignore**
 
-  **What to do**:
-  - Author `packages/ts/app/github-app.yml` with a replaceable absolute HTTPS hook URL, `public: false`, only `pull_request` events, and `default_permissions: {pull_requests: write, checks: write, metadata: read}`.
-  - Add explicit negative-scope docs in `docs/permissions.md`:
-    - Bot has ONLY: `pull_requests: write` (comments), `checks: write` (check runs), `metadata: read` (repo visibility).
-    - Bot does NOT have: `contents: write` (cannot push or modify branches), `issues: write` (cannot edit issues), `actions: write` (cannot modify workflows).
-  - Implement bot self-ignore in `packages/python/enten/src/enten/github/bot_self.py`:
-    - `def is_bot_pr(pr, settings) → bool`: True if `pr.user.login == settings.github_app_slug OR pr.head.repo.owner.login == settings.github_app_slug`.
-    - Hook into the worker pipeline: at start, if `is_bot_pr()` → `mark_state(run_id, 'failed', last_error='bot-self-ignore')` and exit.
-  - Add `scripts/check-permissions.sh` that grep-checks for forbidden strings (`contents: write`, `contents.write`, `actions: write`) in the manifest + repo source; exits 1 if found. Add to pre-commit.
-  - Tests: `tests/test_bot_self.py`: synthetic PR with user.login='enten-bot[bot]' → True; non-bot user → False.
-
-  **Must NOT do**:
-  - Do not add `contents: write`.
-  - Do not propose branch modifications in any code path.
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Reason**: Configuration + small guard.
-  - **Skills**: none
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES
-  - **Parallel Group**: Wave 3
-  - **Blocks**: F1 (permission audit), F4 (scope fidelity)
-  - **Blocked By**: T01
-
-  **References**:
-  - GitHub App manifest reference: https://docs.github.com/en/apps/sharing-github-apps/registering-github-apps-from-a-manifest#required-manifest-fields — full shape
-  - Available permissions: https://docs.github.com/en/rest/apps/installations#review-and-modify-permissions — exact strings
-
-  **Acceptance Criteria**:
-  - [ ] `packages/ts/app/github-app.yml` parses as YAML and contains the 3 allowed permissions only
-  - [ ] `bash scripts/check-permissions.sh` → exits 0
-  - [ ] `uv run pytest packages/python/enten/tests/test_bot_self.py` → 3+ tests pass
-  - [ ] Manual: install the GitHub App via `?code=…` URL on a personal repo, ensure comments + check runs work, branches are NOT writable.
-
-  **QA Scenarios (MANDATORY)**:
-
-  **Scenario 1: Manifest YAML valid + scope check**
-    Tool: Bash
-    Preconditions: github-app.yml written
-    Steps:
-      1. `uv run python -c "import yaml; y = yaml.safe_load(open('packages/ts/app/github-app.yml').read()); print(sorted(y['default_permissions']))"` → `[checks, metadata, pull_requests]` (no `contents`)
-      2. `bash scripts/check-permissions.sh` → 0
-    Expected Result: Manifest valid, no forbidden strings
-    Failure Indicators: missing keys; 'contents' present
-    Evidence: `.omo/evidence/task-23-manifest.txt`
-
-  **Scenario 2: Bot self-ignore logic**
-    Tool: Bash (Py)
-    Preconditions: synthetic PR
-    Steps:
-      1. `is_bot_pr(pr_user_login='enten-bot[bot]', settings...)` → True
-      2. `is_bot_pr(pr_user_login='github-actions[bot]', settings...)` → False (only enten-bot is ignored)
-    Expected Result: True / False correctly
-    Evidence: `.omo/evidence/task-23-self-ignore.txt`
-
-  **Scenario 3 (Failure): Manifest with `contents:write` is rejected by `check-permissions.sh`**
-    Tool: Bash
-    Preconditions: script shipped
-    Steps:
-      1. Save backup; edit `packages/ts/app/github-app.yml` adding `contents: write` under `default_permissions`
-      2. `bash scripts/check-permissions.sh` → exit 1, stderr names the violation
-      3. Restore backup
-      4. `bash scripts/check-permissions.sh` → exit 0
-    Expected Result: drift detected; never approved
-    Failure Indicators: script exit 0 with `contents: write` present
-    Evidence: `.omo/evidence/task-23-bad-permission.txt`
-
-  **Commit**: YES
-  - Message: `docs(github): register GitHub App manifest with strict permission scope + bot-self-ignore`
-  - Files: packages/ts/app/github-app.yml, packages/python/enten/src/enten/github/bot_self.py, docs/permissions.md, scripts/check-permissions.sh, packages/python/enten/tests/test_bot_self.py
-  - Pre-commit: `bash scripts/check-permissions.sh && uv run pytest packages/python/enten/tests/test_bot_self.py`
-
----
+  `packages/ts/app/github-app.yml` is a validated installation manifest template
+  with only `pull_requests: write`, `checks: write`, and `metadata: read`. Its
+  example webhook URL must be replaced before an operator registers an App;
+  repository verification does not register or install one. The permission
+  gate rejects forbidden write scopes, while ingress ignores draft PRs and the
+  configured bot identity. Credentialed registration and live posting remain
+  explicit operator-run checks outside the repository release gate.
 
 **LANDMARK at end of Wave 3**: Bot reviews a PR using static + security + Checks API + PR comment with NO LLM involved. This is the first demoable milestone; you can show this at any point.
 
@@ -3462,79 +3239,15 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 
 ---
 
-### Task 39 — E2BSandbox implementation
+### Task 39 — Unsupported E2B selection fails closed
 
-- [ ] **39. E2BSandbox implementation — second hosted sandbox backend, pluggable behind SandboxProvider, hermetic per-PR image**
+- [x] **39. Unsupported E2B selection fails closed**
 
-  **What to do**:
-  - `packages/python/enten/src/enten/sandbox/e2b.py` implementing `SandboxProvider` via the E2B SDK (`e2b` package).
-  - Implement:
-    - `create(files: dict) → SandboxHandle`
-    - `run(cmd: list[str], timeout_seconds: int)`
-    - `upload(files: dict)`
-    - `destroy()`
-  - Settings selector: `Settings().sandbox_provider == 'e2b'` → use E2B; `'docker'` → Docker (T13).
-  - Tests `tests/test_e2b_sandbox.py` use the E2B mock server (`e2b` package's testing harness) — sandbox start, run, destroy. (Or just unit tests with mocked httpx.)
-  - Re-use T13's exec semantics: timeout, exit code, stdout/stderr capture.
-  - Add `e2b_code_interpreter` flag to detect a simpler integration path if desired (optional; defer to v1.1).
-
-  **Must NOT do**:
-  - Do not include Daytona.
-  - Do not leave the E2B api key in source (always from Settings).
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Reason**: Standard SDK wrapper.
-  - **Skills**: none
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (with T37, T38)
-  - **Parallel Group**: Wave 6
-  - **Blocks**: T40 (deploy Fly.io chooses E2B in prod)
-  - **Blocked By**: T13 (interface), T03 (e2b_api_key)
-
-  **References**:
-  - E2B Python SDK: https://e2b.dev/docs/sdk — patterns
-  - E2B templates: https://e2b.dev/docs/templates — custom base image
-
-  **Acceptance Criteria**:
-  - [ ] `uv run pytest packages/python/enten/tests/test_e2b_sandbox.py` → 3+ tests pass (basic, timeout, destroy)
-  - [ ] Selector test: with `Settings().sandbox_provider = 'e2b'`, factory returns `E2BSandbox` instance.
-
-  **QA Scenarios (MANDATORY)**:
-
-  **Scenario 1: E2B interface unit**
-    Tool: Bash (Py)
-    Preconditions: E2B SDK installed; mock httpx
-    Steps:
-      1. `uv run pytest packages/python/enten/tests/test_e2b_sandbox.py::test_create_run_destroy -v`
-    Expected Result: full lifecycle works on mock
-    Evidence: `.omo/evidence/task-39-e2b.txt`
-
-  **Scenario 2: Factory selects E2B based on settings**
-    Tool: Bash
-    Preconditions: settings override
-    Steps:
-      1. `SandboxProvider.for_settings(settings_with_e2b)` returns `E2BSandbox`
-    Expected Result: provider selection
-    Evidence: `.omo/evidence/task-39-factory.txt`
-
-  **Scenario 3 (Failure): Invalid `E2B_API_KEY` → `LLMAuthenticationError`-style 401 with actionable message**
-    Tool: Bash (Py + respx)
-    Preconditions: stub E2B API returns 401 with `{"message":"Invalid API key"}`
-    Steps:
-      1. `uv run pytest packages/python/enten/tests/test_e2b_sandbox.py::test_401 -v`
-      2. With `settings.e2b_api_key='e2b_invalid'`, create sandbox → raises `SandboxAuthenticationError` with message mentioning `e2b.dev` and pointing to `Settings().e2b_api_key`
-    Expected Result: clear, actionable error (operator knows to fix env, not bug)
-    Failure Indicators: opaque message ('failed') without guidance
-    Evidence: `.omo/evidence/task-39-401.txt`
-
-  **Commit**: YES
-  - Message: `feat(sandbox): add E2BSandbox implementation as second hosted backend`
-  - Files: packages/python/enten/src/enten/sandbox/e2b.py, packages/python/enten/src/enten/sandbox/factory.py, packages/python/enten/tests/test_e2b_sandbox.py
-  - Pre-commit: `uv run pytest packages/python/enten/tests/test_e2b_sandbox.py`
-
----
+  `SandboxProvider.E2B` remains a parseable legacy selection so configuration
+  errors receive an actionable message, but no E2B API key or SDK contract is
+  shipped. The factory raises before network activity and directs operators to
+  the verified Docker backend. Reintroducing E2B requires a separately approved
+  dependency decision and lifecycle/security tests equivalent to Docker.
 
 ## Task Details — Wave 7 (Deploy + demo + hardening)
 
@@ -3545,12 +3258,12 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
   **What to do**:
   - `Dockerfile` at repo root: multi-stage build.
     - Stage 1 (builder): `python:3.12-slim` + `uv` + copy source + `uv sync`.
-    - Stage 2 (runtime): `python:3.12-slim`. Copy installed `.venv` + source. USER 1000, EXPOSE 9090 (Py metrics), 9091 (TS metrics), 3000 (TS app). HEALTHCHECK `CMD curl -fsS http://localhost:9090/health` (via a tiny Python health script embedded; **note: webhook receiver is on port 3000 and app's `/health` is on same port as TS app** — pick one).
+    - Stage 2 (runtime): `python:3.12-slim`. Copy installed `.venv` + source. USER 1000, EXPOSE 9091 (TS metrics/health) and 3000 (TS app). HEALTHCHECK runs `python /app/health.py`, which defaults to `METRICS_PORT=9091` (via a tiny Python health script embedded; **note: webhook receiver is on port 3000 and app's `/health` is on same port as TS app** — pick one).
     - Use `--no-install-recommends`, `apt-get clean`.
   - `docker-compose.yml` already from T02; ensure it can build the app image: `compose: app -> build: .` with `depends_on: [postgres, jaeger]`.
   - `fly.toml` at root:
-    - `app = "enten-ai"`, `primary_region = "iad"`, `[env]` includes `DATABASE_URL`, `OTEL_ENDPOINT`, `SANDBOX_PROVIDER=e2b`, `LLM_PROVIDER=openai-compat`.
-    - `[[services]]` for internal 3000 + 9090 + 9091 healthcheck.
+    - `app = "enten-ai"`, `primary_region = "iad"`, `[env]` includes `DATABASE_URL`, `OTEL_ENDPOINT`, `SANDBOX_PROVIDER=docker`.
+    - `[[services]]` for internal 3000 and 9091 healthcheck.
     - `[[vm]]` size `shared-cpu-1x` 1 GB.
   - `railway.toml` (alternative): `buildCommand`, `startCommand = "uv run enten worker + uv run python -m packages.ts.app.server"`, healthcheck on `/health`.
   - Add `scripts/deploy-staging.sh` that uses `fly` or `railway up` (no-op for v1; comment placeholder).
@@ -4111,7 +3824,7 @@ devenv shell -- bash -c 'vitest --run --coverage'  # Vitest run with coverage
 devenv shell -- bash -c 'pytest --cov=packages/python/enten/src --cov-fail-under=80'
 git diff --stat main..HEAD                  # Scope check
 grep -rE 'contents: write|contents.write' packages/ts/app/  # MUST return 0 matches
-grep -rE 'LANGCHAIN_API_KEY|GITHUB_TOKEN|OPENAI_API_KEY|E2B_API_KEY' .omo/evidence/  # MUST return 0
+grep -rE 'LANGCHAIN_API_KEY|GITHUB_TOKEN|OPENAI_API_KEY' .omo/evidence/  # MUST return 0
 devenv shell -- bash -c 'python -m enten.eval --corpus tests/fixtures/prs/ --report eval.json'  # Eval — precision ≥ 0.7, recall ≥ 0.6
 ```
 
@@ -4128,5 +3841,5 @@ devenv shell -- bash -c 'python -m enten.eval --corpus tests/fixtures/prs/ --rep
 - [ ] One OTel trace per PR with 9+ spans (Jaeger check)
 - [ ] CI matrix green on PR to main
 - [ ] `docker compose up` cold-start in < 5 min
-- [ ] Demo: open PR on demo fork → bot comments + Check within 2 min
+- [ ] Credentialed live GitHub posting check (outside repository-only verification)
 - [ ] F1–F4 reviewer verdicts: ALL APPROVE

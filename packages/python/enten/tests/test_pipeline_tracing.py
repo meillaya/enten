@@ -38,6 +38,9 @@ async def test_pipeline_emits_observable_stage_spans_under_consumer(tmp_path: Pa
             _ = payload
             return EffectReceipt(state="skipped")
 
+        async def reconcile(self, payload: ReportPayload) -> EffectReceipt:
+            raise AssertionError(payload)
+
     request = ReviewRequest(
         repository_id="local/repo",
         pr_number=1,

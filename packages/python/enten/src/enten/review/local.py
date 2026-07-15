@@ -68,11 +68,20 @@ class LocalFindingsGenerator:
 
 class LocalVerifier:
     async def verify(self, request: ReviewRequest) -> VerificationEvidence:
-        completed = await anyio.run_process(
-            request.verification_command,
-            cwd=request.repository_path,
-            check=False,
-        )
+        try:
+            completed = await anyio.run_process(
+                request.verification_command,
+                cwd=request.repository_path,
+                check=False,
+            )
+        except OSError as exc:
+            return VerificationEvidence(
+                exit_codes=(),
+                command=request.verification_command,
+                log_paths=(),
+                verdict="error",
+                infrastructure_detail=f"{type(exc).__name__}: {exc}",
+            )
         return VerificationEvidence(
             exit_codes=(completed.returncode,),
             command=request.verification_command,

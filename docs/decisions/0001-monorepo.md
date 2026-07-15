@@ -11,7 +11,7 @@ Accepted.
 
 ## Context
 
-We need to ship an agent that has both a Python core (planners, tool registry) and a TypeScript edge (webhooks, HTTP API, observability). The question is whether to keep them in one repository or split them into separate repositories.
+We need to ship a Python review worker and reusable analysis/model libraries alongside a TypeScript webhook edge. The question is whether to keep them in one repository or split them into separate repositories.
 
 ## Decision
 

@@ -86,10 +86,19 @@ class VerificationEvidence(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    exit_codes: tuple[int, ...] = Field(min_length=1, max_length=10)
+    exit_codes: tuple[int, ...] = Field(max_length=10)
     command: tuple[str, ...]
     log_paths: tuple[str, ...] = Field(max_length=20)
     verdict: Verdict = "error"
+    infrastructure_detail: str | None = Field(default=None, max_length=1_000)
+
+    @model_validator(mode="after")
+    def require_process_or_infrastructure_evidence(self) -> VerificationEvidence:
+        if not self.exit_codes and self.infrastructure_detail is None:
+            raise ValueError("verification requires process exits or infrastructure detail")
+        if self.infrastructure_detail is not None and self.verdict != "error":
+            raise ValueError("infrastructure failures require an error verdict")
+        return self
 
 
 class EffectReceipt(BaseModel):

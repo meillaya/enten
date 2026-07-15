@@ -19,9 +19,11 @@ from enten.queue import (
     init_queue,
     list_latest_review_checkpoints,
     load_latest_review_checkpoint,
+    maintain_lease,
     mark_state,
     prepare_effect,
     record_effect_attempt,
+    renew_lease,
     save_review_checkpoint,
 )
 
@@ -87,6 +89,84 @@ async def test_expired_lease_reclaim_invalidates_stale_generation(durable_queue:
     assert second["generation"] == first["generation"] + 1
     assert not await mark_state(run_id, "reviewing", generation=first["generation"])
     assert await mark_state(run_id, "reviewing", generation=second["generation"])
+
+
+@pytest.mark.slow
+async def test_renewed_lease_prevents_clock_advanced_stale_reclaim(durable_queue: Any) -> None:
+    run_id = await enqueue({"kind": "pr_review", "payload": {}})
+    first = await claim_next("worker-a", lease_duration=timedelta(seconds=1))
+    assert first is not None
+    async with durable_queue.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at = now() + interval '1 second',
+                updated_at = now() - interval '1 hour'
+            WHERE run_id = $1
+            """,
+            run_id,
+        )
+
+    assert await renew_lease(
+        run_id,
+        worker_id="worker-a",
+        generation=first["generation"],
+        lease_duration=timedelta(minutes=5),
+    )
+    second = await claim_next("worker-b")
+
+    assert second is None
+
+
+@pytest.mark.slow
+async def test_renew_lease_rejects_stale_generation_and_worker(durable_queue: Any) -> None:
+    run_id = await enqueue({"kind": "pr_review", "payload": {}})
+    first = await claim_next("worker-a")
+    assert first is not None
+
+    assert not await renew_lease(
+        run_id,
+        worker_id="worker-b",
+        generation=first["generation"],
+    )
+    assert not await renew_lease(
+        run_id,
+        worker_id="worker-a",
+        generation=first["generation"] - 1,
+    )
+
+
+async def test_maintain_lease_renews_while_claim_scope_is_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    renewed = anyio.Event()
+    calls: list[tuple[str, str, int]] = []
+
+    async def fake_renew(
+        run_id: str,
+        *,
+        worker_id: str,
+        generation: int,
+        lease_duration: timedelta,
+    ) -> bool:
+        calls.append((run_id, worker_id, generation))
+        renewed.set()
+        await anyio.sleep(0)
+        return True
+
+    monkeypatch.setattr("enten.queue.leases.renew_lease", fake_renew)
+
+    async with maintain_lease(
+        "run-slow",
+        worker_id="worker-slow",
+        generation=4,
+        lease_duration=timedelta(seconds=2),
+        heartbeat_interval=timedelta(milliseconds=1),
+    ):
+        await renewed.wait()
+
+    assert calls
+    assert set(calls) == {("run-slow", "worker-slow", 4)}
 
 
 @pytest.mark.slow
@@ -233,3 +313,40 @@ async def test_ambiguous_effect_retry_remains_indeterminate(durable_queue: Any) 
     persisted = await get_effect(run_id, "github-review")
     assert persisted is not None
     assert persisted["state"] is EffectState.INDETERMINATE
+
+
+@pytest.mark.slow
+async def test_prepared_effect_is_refenced_to_reclaimed_generation(
+    durable_queue: Any,
+) -> None:
+    run_id = await enqueue({"kind": "pr_review", "payload": {}})
+    first = await claim_next("worker-a", lease_duration=timedelta(seconds=30))
+    assert first is not None
+    request = {"body_hash": "abc"}
+    prepared = await prepare_effect(
+        run_id,
+        "github-comment",
+        first["generation"],
+        marker="enten:delivery-1:comment",
+        request=request,
+    )
+    assert prepared["state"] is EffectState.PREPARED
+    async with durable_queue.acquire() as conn:
+        await conn.execute(
+            "UPDATE jobs SET lease_expires_at = now() - interval '1 second' WHERE run_id = $1",
+            run_id,
+        )
+    reclaimed = await claim_next("worker-b")
+    assert reclaimed is not None
+
+    refenced = await prepare_effect(
+        run_id,
+        "github-comment",
+        reclaimed["generation"],
+        marker="enten:delivery-1:comment",
+        request=request,
+    )
+
+    assert refenced["state"] is EffectState.PREPARED
+    assert refenced["generation"] == reclaimed["generation"]
+    assert await record_effect_attempt(run_id, "github-comment", reclaimed["generation"])

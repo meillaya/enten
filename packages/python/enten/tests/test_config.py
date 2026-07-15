@@ -26,17 +26,8 @@ def isolate_settings_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # ── Settings: defaults ──────────────────────────────────────────────────
 def test_settings_returns_documented_defaults() -> None:
-    """``Settings()`` with no env file applies the documented defaults.
-
-    The acceptance criterion in the plan spells out
-    ``max_pr_diff_tokens == 50000``; we also pin a few siblings so a
-    future accidental default change trips a loud test failure rather
-    than silently rewriting the agent's behaviour.
-    """
     s = Settings(_env_file=None)
-    assert s.max_pr_diff_tokens == 50000
     assert s.per_pr_cost_cap_usd == 0.50
-    assert s.prometheus_metrics_port == 9090
     assert s.llm_default_model == "gpt-4o-mini"
     assert s.llm_max_iterations == 15
     assert s.github_app_slug == "enten-bot"
@@ -48,24 +39,15 @@ def test_settings_returns_documented_defaults() -> None:
     # in environments that don't have them yet.
     assert s.github_webhook_secret is None
     assert s.llm_openai_api_key is None
-    assert s.e2b_api_key is None
 
 
 # ── Settings: env file override ─────────────────────────────────────────
 def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
-    """``Settings(_env_file=...)`` reads from the supplied path.
-
-    Mirrors QA scenario 1 in the plan verbatim: copy ``.env.example``
-    into a temp file, override one value, assert the model picks it
-    up. We use ``max_pr_diff_tokens`` because it is an int — a string
-    from the env file must be coerced to an int at the boundary, not
-    left as a str.
-    """
     env_file = tmp_path / "test.env"
     env_file.write_text(
         textwrap.dedent(
             """
-            MAX_PR_DIFF_TOKENS=99999
+            LLM_MAX_ITERATIONS=9
             LLM_PROVIDER=ollama
             GITHUB_WEBHOOK_SECRET=topsecret
             """
@@ -74,7 +56,7 @@ def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
 
     s = Settings(_env_file=str(env_file))
 
-    assert s.max_pr_diff_tokens == 99999
+    assert s.llm_max_iterations == 9
     assert s.llm_provider == LLMProvider.OLLAMA
     assert s.github_webhook_secret == "topsecret"
     # An unrelated field still falls back to the model default.
@@ -94,22 +76,12 @@ def test_settings_tolerates_missing_required_field() -> None:
     s = Settings(_env_file=None)
     assert s.github_app_id is None
     assert s.github_app_private_key_path is None
-    assert s.committer_email is None
 
 
 # ── Settings: bad type raises ───────────────────────────────────────────
 def test_settings_raises_validation_error_on_bad_type(tmp_path: Path) -> None:
-    """A non-integer ``MAX_PR_DIFF_TOKENS`` triggers ``ValidationError``,
-    never silent coercion.
-
-    The plan's "Do not coerce types silently" rule is the loudest
-    part of T03. We pass ``"not-an-int"`` and expect pydantic to
-    raise — if this test ever flips to a successful parse, a
-    regression has introduced string-to-int coercion and the agent
-    will start miscounting PR diffs at runtime.
-    """
     env_file = tmp_path / "bad.env"
-    env_file.write_text("MAX_PR_DIFF_TOKENS=not-an-int\n")
+    env_file.write_text("LLM_MAX_ITERATIONS=not-an-int\n")
 
     with pytest.raises(ValidationError):
         Settings(_env_file=str(env_file))
