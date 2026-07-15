@@ -10,4 +10,5 @@
 !*.json
 !*.patch
 !determinism/test_determinism.py
+!prs/smoke/*/src/*.py
 *.tar.gz

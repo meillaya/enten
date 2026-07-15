@@ -59,6 +59,19 @@ def _make_fixture(
     )
     if stub_findings is not None:
         (fixture_dir / "stub_findings.json").write_text(json.dumps(stub_findings), encoding="utf-8")
+    referenced = expected_findings + (stub_findings or [])
+    required_lines: dict[str, int] = {}
+    for finding in referenced:
+        path = cast(str, finding["file"])
+        line = cast(int, finding["line"])
+        required_lines[path] = max(required_lines.get(path, 0), line)
+    for relative, line_count in required_lines.items():
+        source = fixture_dir / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(
+            "".join(f"fixture line {number}\n" for number in range(1, line_count + 1)),
+            encoding="utf-8",
+        )
     return fixture_dir
 
 
