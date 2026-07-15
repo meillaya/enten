@@ -32,7 +32,7 @@ export const PrJobEnvelopeSchema = z
       .object({
         id: z.number().int().positive(),
         full_name: maxCodePoints(
-          z.string().regex(/^[^/\s]+\/[^/\s]+$(?![\s\S])/),
+          z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$(?![\s\S])/),
           255,
         ),
       })

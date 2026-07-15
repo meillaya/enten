@@ -24,7 +24,10 @@ PositiveJsonInteger = Annotated[
 class EnvelopeRepository(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
     id: PositiveJsonInteger
-    full_name: str = Field(pattern=r"^[^/\s]+/[^/\s]+$", max_length=255)
+    full_name: str = Field(
+        pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+        max_length=255,
+    )
 
 
 class EnvelopePullRequest(BaseModel):

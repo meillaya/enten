@@ -28,7 +28,7 @@
         "full_name": {
           "type": "string",
           "maxLength": 255,
-          "pattern": "^[^/\\s]+/[^/\\s]+$(?![\\s\\S])"
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$(?![\\s\\S])"
         }
       }
     },

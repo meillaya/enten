@@ -14,5 +14,9 @@
   {
     "path": ["repository", "full_name"],
     "value": "owner/repo\n"
+  },
+  {
+    "path": ["repository", "full_name"],
+    "value": "owner/re\u0085po"
   }
 ]
