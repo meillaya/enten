@@ -78,6 +78,7 @@ Thumbs.db
 .trash/
 
 # ─── Local data / artifacts ────────────────────────────────────────────
+.enten/
 data/
 artifacts/
 *.log

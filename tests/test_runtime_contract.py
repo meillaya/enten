@@ -5,6 +5,7 @@ import os
 import subprocess
 import tomllib
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -126,3 +127,16 @@ def test_platform_configs_keep_web_worker_and_migration_separate() -> None:
     assert railway_web["deploy"]["preDeployCommand"] == migration
     assert railway_web["deploy"]["startCommand"] == "node packages/ts/app/dist/server.js"
     assert railway_worker["deploy"]["startCommand"] == "enten worker"
+
+
+def test_github_manifest_uses_a_replaceable_absolute_webhook_url() -> None:
+    manifest = yaml.safe_load(
+        (ROOT / "packages" / "ts" / "app" / "github-app.yml").read_text(encoding="utf-8")
+    )
+    hook_url = manifest["hook_attributes"]["url"]
+    parsed = urlparse(hook_url)
+
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "example.com"
+    assert parsed.path.endswith("/webhook")
+    assert "$" not in hook_url

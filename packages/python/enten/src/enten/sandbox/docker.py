@@ -9,22 +9,26 @@ non-root user.
 
 from __future__ import annotations
 
-import io
-import socket
-import tarfile
 import time
 from collections.abc import Mapping
 from functools import partial
-from typing import Protocol, cast
+from typing import cast
 
 import docker
-from anyio import CancelScope, fail_after, get_cancelled_exc_class
+from anyio import CancelScope, get_cancelled_exc_class
 from anyio.lowlevel import checkpoint_if_cancelled
 from anyio.to_thread import run_sync
 from docker.errors import ImageNotFound, NotFound
 from docker.models.containers import Container
 
-from .files import UnsafeSandboxPathError, safe_relative_path
+from .docker_transport import (
+    DockerExecAPI,
+    DockerExecOutputLimitError,
+    DockerTransportError,
+    extract_files_stream,
+    run_exec_stream,
+)
+from .files import UnsafeSandboxPathError, validate_sandbox_files
 from .models import ExecResult, SandboxHandle
 
 
@@ -33,24 +37,9 @@ class DockerSandboxCreationError(RuntimeError):
         super().__init__(f"Docker created a container without an id for image {image!r}")
 
 
-class _SocketStream(Protocol):
-    def close(self) -> None: ...
-
-
-class _DockerExecAPI(Protocol):
-    def exec_create(
-        self,
-        container: str | None,
-        cmd: tuple[str, ...],
-        *,
-        stdin: bool,
-        stdout: bool,
-        stderr: bool,
-    ) -> dict[str, object]: ...
-
-    def exec_start(self, exec_id: str, *, socket: bool) -> _SocketStream: ...
-
-    def exec_inspect(self, exec_id: str) -> dict[str, object]: ...
+class DockerSandboxTimeoutLimitError(ValueError):
+    def __init__(self, timeout_seconds: int, limit: int) -> None:
+        super().__init__(f"timeout_seconds ({timeout_seconds}) exceeds max {limit}")
 
 
 class DockerSandbox:
@@ -61,6 +50,7 @@ class DockerSandbox:
     )
     WORKSPACE: str = "/workspace"
     MAX_TIMEOUT_SECONDS: int = 600
+    MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024
     DEFAULT_TMPFS: dict[str, str] = {"/tmp": "rw,noexec,nosuid,nodev,size=128m,mode=1777"}
     WORKSPACE_TMPFS: str = "rw,nosuid,nodev,size=512m,mode=0755,uid=1000,gid=1000"
 
@@ -79,8 +69,9 @@ class DockerSandbox:
 
     async def create(self, repo_files: dict[str, str]) -> SandboxHandle:
         """Create a hardened container seeded with ``repo_files``."""
-        repository_archive = _archive(repo_files)
+        validate_sandbox_files(repo_files)
         created_container: Container | None = None
+        completed = False
         try:
             await self._ensure_image()
 
@@ -91,6 +82,7 @@ class DockerSandbox:
                         self._client.containers.run,
                         self.image,
                         command="sleep infinity",
+                        entrypoint="",
                         detach=True,
                         auto_remove=True,
                         read_only=True,
@@ -113,18 +105,19 @@ class DockerSandbox:
             container_id = container.id
             if container_id is None:
                 raise DockerSandboxCreationError(image=self.image)
-            await run_sync(_extract_archive, container, repository_archive)
+            await run_sync(_extract_files, container, repo_files, self.WORKSPACE)
             await checkpoint_if_cancelled()
-            return SandboxHandle(
+            handle = SandboxHandle(
                 id=container_id,
                 provider="docker",
                 image=self.image,
             )
-        except BaseException:
-            if created_container is not None:
+            completed = True
+            return handle
+        finally:
+            if not completed and created_container is not None:
                 with CancelScope(shield=True):
                     await run_sync(partial(created_container.stop, timeout=10))
-            raise
 
     async def run(
         self,
@@ -134,28 +127,34 @@ class DockerSandbox:
     ) -> ExecResult:
         """Execute ``cmd`` inside the container with a wall-clock timeout."""
         if timeout_seconds > self.MAX_TIMEOUT_SECONDS:
-            raise ValueError(
-                f"timeout_seconds ({timeout_seconds}) exceeds max {self.MAX_TIMEOUT_SECONDS}"
+            raise DockerSandboxTimeoutLimitError(
+                timeout_seconds,
+                self.MAX_TIMEOUT_SECONDS,
             )
 
         start = time.monotonic()
         try:
             container = await run_sync(self._client.containers.get, handle.id)
-            with fail_after(timeout_seconds):
-                result = await run_sync(
-                    partial(container.exec_run, cmd, demux=True),
-                    abandon_on_cancel=True,
-                )
+            client = container.client
+            if client is None:
+                raise DockerTransportError("Docker container has no client for exec")
+            api = cast(DockerExecAPI, client.api)
+            result = await run_sync(
+                partial(
+                    run_exec_stream,
+                    api,
+                    container_id=handle.id,
+                    command=tuple(cmd),
+                    timeout_seconds=timeout_seconds,
+                    max_output_bytes=self.MAX_OUTPUT_BYTES,
+                ),
+                abandon_on_cancel=True,
+            )
             duration_ms = int((time.monotonic() - start) * 1000)
-            exit_code = result.exit_code
-            if exit_code is None:
-                raise RuntimeError("Docker exec returned no exit code")
-            output = cast(bytes | tuple[bytes | None, bytes | None] | None, result.output)
-            stdout_bytes, stderr_bytes = _output_pair(output)
             return ExecResult(
-                exit_code=exit_code,
-                stdout=_decode_output(stdout_bytes),
-                stderr=_decode_output(stderr_bytes),
+                exit_code=result.exit_code,
+                stdout=_decode_output(result.stdout),
+                stderr=_decode_output(result.stderr),
                 duration_ms=duration_ms,
             )
         except TimeoutError:
@@ -167,6 +166,10 @@ class DockerSandbox:
                 stderr="timeout",
                 duration_ms=duration_ms,
             )
+        except DockerExecOutputLimitError:
+            with CancelScope(shield=True):
+                await self.destroy(handle)
+            raise
         except get_cancelled_exc_class():
             with CancelScope(shield=True):
                 await self.destroy(handle)
@@ -174,9 +177,9 @@ class DockerSandbox:
 
     async def upload(self, handle: SandboxHandle, files: dict[str, str | bytes]) -> None:
         """Copy files into a running container's workspace."""
-        archive = _archive(files)
+        validate_sandbox_files(files)
         container = await run_sync(self._client.containers.get, handle.id)
-        await run_sync(_extract_archive, container, archive)
+        await run_sync(_extract_files, container, files, self.WORKSPACE)
 
     async def destroy(self, handle: SandboxHandle) -> None:
         """Stop and remove the container."""
@@ -198,70 +201,34 @@ class DockerSandbox:
             _ = await run_sync(self._client.images.pull, self.image)
 
 
-def _decode_output(output: bytes | None) -> str:
-    return "" if output is None else output.decode("utf-8", errors="replace")
+def _decode_output(output: bytes) -> str:
+    return output.decode("utf-8", errors="replace")
 
 
-def _output_pair(
-    output: bytes | tuple[bytes | None, bytes | None] | None,
-) -> tuple[bytes | None, bytes | None]:
-    return output if isinstance(output, tuple) else (output, None)
-
-
-def _archive(files: Mapping[str, str | bytes]) -> bytes:
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as archive:
-        for raw_path, content in files.items():
-            data = content if isinstance(content, bytes) else content.encode("utf-8")
-            info = tarfile.TarInfo(safe_relative_path(raw_path).as_posix())
-            info.size = len(data)
-            info.mode = 0o644
-            info.uid = 1000
-            info.gid = 1000
-            archive.addfile(info, io.BytesIO(data))
-    return buffer.getvalue()
-
-
-def _extract_archive(container: Container, archive: bytes) -> None:
-    script = "".join(
-        (
-            "import sys,tarfile; ",
-            "tarfile.open(fileobj=sys.stdin.buffer,mode='r|')",
-            ".extractall('/workspace',filter='data')",
-        )
-    )
-    command = ("python", "-c", script)
+def _extract_files(
+    container: Container,
+    files: Mapping[str, str | bytes],
+    workspace: str,
+) -> None:
     client = container.client
     if client is None:
-        raise RuntimeError("Docker container has no client for archive extraction")
-    api = cast(_DockerExecAPI, cast(object, client.api))
-    created = api.exec_create(
-        container.id,
-        command,
-        stdin=True,
-        stdout=False,
-        stderr=False,
+        raise DockerTransportError("Docker container has no client for archive extraction")
+    container_id = container.id
+    if container_id is None:
+        raise DockerSandboxCreationError(image=str(container.image))
+    api = cast(DockerExecAPI, client.api)
+    extract_files_stream(
+        api,
+        container_id=container_id,
+        files=files,
+        workspace=workspace,
     )
-    exec_id = created.get("Id")
-    if not isinstance(exec_id, str):
-        raise RuntimeError("Docker returned no exec id for sandbox archive extraction")
-    stream = api.exec_start(exec_id, socket=True)
-    raw_socket = cast(socket.socket, vars(stream)["_sock"])
-    try:
-        raw_socket.sendall(archive)
-        raw_socket.shutdown(socket.SHUT_WR)
-        deadline = time.monotonic() + 30
-        while True:
-            status = api.exec_inspect(exec_id)
-            if status.get("Running", False) is not True:
-                if status.get("ExitCode") != 0:
-                    raise RuntimeError("sandbox archive extraction failed")
-                return
-            if time.monotonic() >= deadline:
-                raise TimeoutError("sandbox archive extraction timed out")
-            time.sleep(0.05)
-    finally:
-        stream.close()
 
 
-__all__ = ["DockerSandbox", "DockerSandboxCreationError", "UnsafeSandboxPathError"]
+__all__ = [
+    "DockerExecOutputLimitError",
+    "DockerSandbox",
+    "DockerSandboxCreationError",
+    "DockerSandboxTimeoutLimitError",
+    "UnsafeSandboxPathError",
+]

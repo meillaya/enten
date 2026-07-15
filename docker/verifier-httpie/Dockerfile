@@ -21,7 +21,8 @@ LABEL org.opencontainers.image.title="enten HTTPie verifier" \
       org.opencontainers.image.version="3.2.4" \
       org.opencontainers.image.revision="2105caa49bae87c5809c274e407619a0de2639d1" \
       io.enten.source.tree="5be8d10a92efc928460e86f1ce6dcabbea1a728a" \
-      io.enten.test.selector="tests/test_offline.py" \
+      io.enten.source.digest="43ea1a4bd1c6b5725df2775f4665f092305f16119c806b84de51e5ee5261268e" \
+      io.enten.test.selector="tests/test_parser_schema.py" \
       io.enten.base.digest="sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28"
 
 COPY --from=builder /opt/venv /opt/venv

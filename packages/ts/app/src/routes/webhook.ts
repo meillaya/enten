@@ -138,6 +138,7 @@ export function createWebhookHandler(options: WebhookRouteOptions) {
   const verifySignature =
     options.verifySignature ??
     ((body: string, signature: string) => webhooks.verify(body, signature));
+  const botSlug = (options.botSlug ?? "enten-bot").toLowerCase();
 
   return async function webhookHandler(c: Context): Promise<Response> {
     return options.tracing.withServerSpan(async () => {
@@ -197,10 +198,12 @@ export function createWebhookHandler(options: WebhookRouteOptions) {
         if (!parsedEvent.success) {
           return c.json({ error: "invalid pull_request payload" }, 422);
         }
+        const authorLogin =
+          parsedEvent.data.pull_request.user.login.toLowerCase();
         if (
           parsedEvent.data.repository.private ||
-          parsedEvent.data.pull_request.user.login.toLowerCase() ===
-            (options.botSlug ?? "enten-bot").toLowerCase() ||
+          authorLogin === botSlug ||
+          authorLogin === `${botSlug}[bot]` ||
           parsedEvent.data.pull_request.draft ||
           !isSupportedAction(parsedEvent.data.action)
         ) {

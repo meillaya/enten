@@ -1,64 +1,79 @@
 # Demo recording script
 
-Screen-record-ready command sequence for enten.
+This sequence runs the real edge and worker against a disposable public fork. It requires a GitHub App, an externally reachable HTTPS origin that forwards `/webhook` to `127.0.0.1:3000`, and a readable App private key.
 
 ## 1. Clone and install
 
 ```bash
-git clone https://github.com/<owner>/enten.git
+git clone https://github.com/Meillaya/enten.git
 cd enten
 make install
 ```
 
-## 2. Start local stack
+## 2. Prepare the verifier and GitHub App
 
 ```bash
-docker compose up -d postgres jaeger
-./scripts/db-migrate.sh
+cp .env.example .env
+docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
 ```
 
-## 3. Start agent
+Replace the example hook origin in `packages/ts/app/github-app.yml` with the public HTTPS origin, create the App from that manifest, and put its real App ID, webhook secret, PEM path, verifier image, and verifier command in `.env`:
+
+```dotenv
+SANDBOX_DOCKER_IMAGE=enten-verifier-httpie:3.2.4
+VERIFICATION_COMMAND=python /opt/verifier/verify.py
+```
+
+## 3. Start and probe the complete stack
 
 ```bash
-make dev
+scripts/dev-up.sh
+scripts/healthcheck-all.sh
 ```
 
-Narration: "The TypeScript edge is listening on port 3000 and the Python worker is polling Postgres for jobs."
+Narration: "The authenticated TypeScript edge is listening on port 3000 and the Python worker is polling the migrated Postgres queue."
 
-## 4. Fork target repo
+## 4. Fork the target and open a pull request
 
 ```bash
-gh repo fork httpie/cli --clone=false --remote=true
+gh repo fork httpie/cli --clone=false
 ```
 
-## 5. Open a PR
+Install the App on your public fork, then create or open a non-draft pull request there. Never install the demo App on the upstream repository.
 
-In the browser, create or open a pull request in your `httpie/cli` fork.
-
-## 6. Watch the worker
-
-In the terminal running `make dev`, wait for log lines:
-
-```
-job claimed -> indexing -> reviewing -> testing -> verifying -> commenting -> done
-```
-
-## 7. Show the result
-
-Refresh the PR in the browser. The enten-bot comment appears with findings, verification status, and cost.
-
-## 8. Run eval smoke
-
-In a second terminal:
+## 5. Watch the real processes
 
 ```bash
-uv run enten eval --corpus tests/fixtures/prs/smoke --stub-llm
+docker compose logs --follow web worker
 ```
 
-## 9. Show traces
+Wait for the authenticated enqueue and the worker's claim, verification, reporting, and completion records.
+
+## 6. Show the result
+
+Refresh the pull request. The App produces one Check Run and one marker-bearing comment for the reviewed head SHA.
+
+## 7. Run the independent eval smoke
+
+```bash
+uv run --project packages/python/enten enten eval \
+  --corpus tests/fixtures/prs/smoke \
+  --report /tmp/enten-demo-eval.json \
+  --stub-llm
+cat /tmp/enten-demo-eval.json
+```
+
+## 8. Show traces
 
 ```bash
 open http://localhost:16686
 ```
 
-Narration: "Every job leaves a trace in Jaeger and every LLM call is logged with cost."
+Narration: "The edge and worker share one causal trace. The default worker makes no implicit model calls."
+
+## 9. Stop the demo
+
+```bash
+scripts/dev-down.sh
+rm -f /tmp/enten-demo-eval.json
+```

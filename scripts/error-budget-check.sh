@@ -1,59 +1,47 @@
 #!/usr/bin/env bash
-# ─── enten — 24-hour job completion error budget ─────────────────────────
-#
-# Reads the last 24 hours of ``jobs`` rows from Postgres and computes the
-# completion rate as ``done / (done + failed + errored)``. Exits non-zero
-# when the rate falls below the configurable threshold.
-#
-# Env:
-#   ERROR_BUDGET_THRESHOLD  default 0.99 (99%)
-#
-# Usage:
-#   bash scripts/error-budget-check.sh
-# ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." &>/dev/null && pwd)"
 cd "$REPO_ROOT"
 
 THRESHOLD="${ERROR_BUDGET_THRESHOLD:-0.99}"
+if [[ ! "$THRESHOLD" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]]; then
+  printf 'error-budget: threshold must be between 0 and 1: %s\n' "$THRESHOLD" >&2
+  exit 2
+fi
 
-rows=$(docker compose exec -T postgres psql -U enten -d enten -t -A -c "
-  SELECT state, count(*)
+if ! row=$(docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U enten -d enten -t -A -c "
+  SELECT
+    count(*) FILTER (WHERE state = 'done'),
+    count(*) FILTER (WHERE state = 'failed')
   FROM jobs
-  WHERE created_at > now() - interval '24 hours'
-  GROUP BY state
-" 2>/dev/null || true)
+  WHERE updated_at > now() - interval '24 hours'
+    AND state IN ('done', 'failed')
+"); then
+  printf '%s\n' 'error-budget: database query failed' >&2
+  exit 1
+fi
 
-declare -A counts
-counts=([done]=0 [failed]=0 [errored]=0)
+IFS='|' read -r done_count failed_count extra <<<"$row"
+if [[ -n "${extra:-}" || ! "${done_count:-}" =~ ^[0-9]+$ || ! "${failed_count:-}" =~ ^[0-9]+$ ]]; then
+  printf 'error-budget: malformed database result: %q\n' "$row" >&2
+  exit 1
+fi
 
-while IFS='|' read -r state count; do
-  [[ -z "$state" ]] && continue
-  # Trim whitespace produced by psql -A.
-  state="${state// /}"
-  count="${count// /}"
-  counts[$state]="${count:-0}"
-done <<< "$rows"
-
-done_count="${counts[done]:-0}"
-failed_count="${counts[failed]:-0}"
-errored_count="${counts[errored]:-0}"
-total=$((done_count + failed_count + errored_count))
-
-if [[ "$total" -eq 0 ]]; then
-  echo "error-budget: no jobs in last 24h (threshold ${THRESHOLD})"
-  exit 0
+total=$((done_count + failed_count))
+if ((total == 0)); then
+  printf 'error-budget: no terminal jobs in last 24h; cannot evaluate threshold %s\n' "$THRESHOLD" >&2
+  exit 1
 fi
 
 rate=$(awk -v done="$done_count" -v total="$total" 'BEGIN { printf "%.4f", done / total }')
-ok=$(awk -v rate="$rate" -v threshold="$THRESHOLD" 'BEGIN { print (rate >= threshold) ? 1 : 0 }')
+printf 'error-budget: done=%s failed=%s total=%s rate=%s threshold=%s\n' \
+  "$done_count" "$failed_count" "$total" "$rate" "$THRESHOLD"
 
-echo "error-budget: done=${done_count} failed=${failed_count} errored=${errored_count} total=${total} rate=${rate} threshold=${THRESHOLD}"
-
-if [[ "$ok" -eq 1 ]]; then
+if awk -v done="$done_count" -v total="$total" -v threshold="$THRESHOLD" \
+  'BEGIN { exit !((done / total) >= threshold) }'; then
   exit 0
 fi
 
-echo "error-budget: completion rate below threshold" >&2
+printf '%s\n' 'error-budget: completion rate below threshold' >&2
 exit 1

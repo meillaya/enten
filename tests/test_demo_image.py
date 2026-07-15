@@ -10,6 +10,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from enten.review.remote import SandboxVerifier
+from enten.review.run import ReviewRequest
+from enten.sandbox.docker import DockerSandbox
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE_DIR = ROOT / "docker" / "verifier-httpie"
@@ -22,18 +25,8 @@ BASE = "python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a2
 REPOSITORY = "httpie/cli"
 REVISION = "2105caa49bae87c5809c274e407619a0de2639d1"
 TREE = "5be8d10a92efc928460e86f1ce6dcabbea1a728a"
-SELECTOR = "tests/test_offline.py"
-HARDENING = (
-    "--network",
-    "none",
-    "--read-only",
-    "--cap-drop",
-    "ALL",
-    "--security-opt",
-    "no-new-privileges",
-    "--pids-limit",
-    "256",
-)
+SELECTOR = "tests/test_parser_schema.py"
+SOURCE_DIGEST = "43ea1a4bd1c6b5725df2775f4665f092305f16119c806b84de51e5ee5261268e"
 
 
 def _docker_available() -> bool:
@@ -58,28 +51,15 @@ def _source_checkout() -> Path:
     return Path(source).resolve()
 
 
-def _run_container(
-    image: str,
-    source: Path,
-    *,
-    name: str,
-    contract_override: tuple[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    command = [
-        "docker",
-        "run",
-        "--rm",
-        "--name",
-        name,
-        *HARDENING,
-        "--mount",
-        f"type=bind,src={source},dst=/workspace",
-    ]
-    if contract_override is not None:
-        key, value = contract_override
-        command.extend(["--env", f"{key}={value}"])
-    command.append(image)
-    return subprocess.run(command, capture_output=True, text=True, check=False)
+def _request(source: Path) -> ReviewRequest:
+    return ReviewRequest(
+        repository_id="1",
+        repository_full_name=REPOSITORY,
+        pr_number=1,
+        head_sha=REVISION,
+        repository_path=source,
+        verification_command=("/opt/venv/bin/python", "/opt/verifier/verify.py"),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -129,7 +109,7 @@ def test_static_contract_is_exact_and_hash_locked() -> None:
         requirements = [match.group(0) for match in re.finditer(pattern, lockfile)]
         assert requirements
         assert all("--hash=sha256:" in requirement for requirement in requirements)
-    for expected in (REPOSITORY, REVISION, TREE, SELECTOR):
+    for expected in (REPOSITORY, REVISION, TREE, SELECTOR, SOURCE_DIGEST):
         assert expected in dockerfile
         assert expected in verifier
 
@@ -139,6 +119,7 @@ def test_image_metadata_and_runtime_are_minimal(demo_image: str) -> None:
         "org.opencontainers.image.source": f"https://github.com/{REPOSITORY}",
         "org.opencontainers.image.revision": REVISION,
         "io.enten.source.tree": TREE,
+        "io.enten.source.digest": SOURCE_DIGEST,
         "io.enten.test.selector": SELECTOR,
     }
     user = subprocess.run(
@@ -189,43 +170,39 @@ def test_image_metadata_and_runtime_are_minimal(demo_image: str) -> None:
         ("ENTEN_TEST_SELECTOR", "tests/test_cli.py"),
     ],
 )
-def test_wrong_sha_or_selector_is_rejected(
+@pytest.mark.asyncio
+async def test_wrong_sha_or_selector_is_rejected(
     demo_image: str,
     key: str,
     value: str,
 ) -> None:
-    completed = _run_container(
-        demo_image,
-        _source_checkout(),
-        name=f"enten-httpie-reject-{uuid.uuid4().hex[:12]}",
-        contract_override=(key, value),
+    provider = DockerSandbox(
+        image=demo_image,
+        environment={key: value},
     )
-    assert completed.returncode == 64
-    assert "contract mismatch" in completed.stderr
+    evidence = await SandboxVerifier(provider).verify(_request(_source_checkout()))
+
+    assert evidence.verdict == "fail"
+    assert evidence.exit_codes == (64, 64, 64)
 
 
 @pytest.mark.slow
-def test_three_fresh_hardened_networkless_runs_pass_under_budget(
+@pytest.mark.asyncio
+async def test_three_fresh_hardened_networkless_runs_pass_under_budget(
     demo_image: str,
 ) -> None:
-    source = _source_checkout()
     started = time.monotonic()
-    transcripts: list[str] = []
-    names: list[str] = []
+    provider = DockerSandbox(image=demo_image)
 
-    for _ in range(3):
-        name = f"enten-httpie-pass-{uuid.uuid4().hex[:12]}"
-        names.append(name)
-        completed = _run_container(demo_image, source, name=name)
-        transcripts.append(completed.stdout + completed.stderr)
-        assert completed.returncode == 0, transcripts[-1]
-        assert re.search(r"\b9 passed\b", transcripts[-1]) is not None
+    evidence = await SandboxVerifier(provider).verify(_request(_source_checkout()))
 
     assert time.monotonic() - started < 120
-    for name in names:
-        removed = subprocess.run(
-            ["docker", "container", "inspect", name],
-            capture_output=True,
-            check=False,
-        )
-        assert removed.returncode != 0
+    assert evidence.verdict == "pass"
+    assert evidence.exit_codes == (0, 0, 0)
+    remaining = subprocess.run(
+        ["docker", "ps", "-q", "--filter", "label=enten.sandbox=true"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert remaining.stdout.strip() == ""

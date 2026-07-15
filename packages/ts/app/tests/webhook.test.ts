@@ -172,28 +172,34 @@ describe("POST /webhook ignored events", () => {
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 200 without enqueue for a bot-authored pull request", async () => {
-    const queue = createQueue();
-    const app = createApp({
-      secret: TEST_SECRET,
-      databaseUrl: "postgresql://unused",
-      botSlug: "enten-bot",
-      queue,
-      tracing: createTracing(),
-    }).app;
-    const payload = JSON.stringify({
-      ...prOpenedFixture,
-      pull_request: {
-        ...prOpenedFixture.pull_request,
-        user: { ...prOpenedFixture.pull_request.user, login: "enten-bot" },
-      },
-    });
+  it.each(["enten-bot", "ENTEN-BOT", "enten-bot[bot]", "Enten-Bot[bot]"])(
+    "returns 200 without enqueue for bot login %s",
+    async (login) => {
+      // Given
+      const queue = createQueue();
+      const app = createApp({
+        secret: TEST_SECRET,
+        databaseUrl: "postgresql://unused",
+        botSlug: "enten-bot",
+        queue,
+        tracing: createTracing(),
+      }).app;
+      const payload = JSON.stringify({
+        ...prOpenedFixture,
+        pull_request: {
+          ...prOpenedFixture.pull_request,
+          user: { ...prOpenedFixture.pull_request.user, login },
+        },
+      });
 
-    const response = await postSigned(app, payload);
+      // When
+      const response = await postSigned(app, payload);
 
-    expect(response.status).toBe(200);
-    expect(queue.enqueue).not.toHaveBeenCalled();
-  });
+      // Then
+      expect(response.status).toBe(200);
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns 200 without enqueue for a private repository", async () => {
     const queue = createQueue();

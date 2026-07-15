@@ -66,6 +66,7 @@ async def execute_review(
 ) -> PipelineResult:
     with dependencies.tracer.start_as_current_span("pipeline.reserve"):
         existing = await dependencies.store.get_by_key(request.key)
+        reconcile_completed_checkpoint = existing is not None and existing.stage == "completed"
         run = existing or ReviewRun(
             review_id=_review_id(request.key),
             request=request,
@@ -89,8 +90,13 @@ async def execute_review(
                 with dependencies.tracer.start_as_current_span("pipeline.findings"):
                     if run.proposal is None:
                         raise ValueError("proposed review is missing its proposal")
-                    findings = await dependencies.generator.generate(run.proposal)
-                    run = run.model_copy(update={"stage": "findings", "findings": findings})
+                    proposal = run.proposal.model_copy(
+                        update={"repository_path": request.repository_path}
+                    )
+                    findings = await dependencies.generator.generate(proposal)
+                    run = run.model_copy(
+                        update={"stage": "findings", "proposal": proposal, "findings": findings}
+                    )
                     await _persist(dependencies, run)
             case "findings":
                 with dependencies.tracer.start_as_current_span("pipeline.verify"):
@@ -138,6 +144,8 @@ async def execute_review(
                     await _persist(dependencies, run)
                 raise IndeterminateEffectError(receipt.detail or "outbound effect is indeterminate")
             case "completed":
+                if reconcile_completed_checkpoint:
+                    await dependencies.stage_sink.transition("completed")
                 return PipelineResult(run=run, replayed=existing is not None)
             case unreachable:
                 assert_never(unreachable)
@@ -173,9 +181,10 @@ def _review_id(key: ReviewKey) -> str:
 
 
 def _arbitrate(exit_codes: tuple[int, ...]) -> str:
-    if all(code == 0 for code in exit_codes):
+    pass_count = sum(code == 0 for code in exit_codes)
+    if pass_count == len(exit_codes):
         return "pass"
-    if len(set(exit_codes)) > 1:
+    if pass_count * 3 >= len(exit_codes) * 2:
         return "flaky"
     return "fail"
 

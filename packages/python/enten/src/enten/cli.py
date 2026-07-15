@@ -8,7 +8,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import shlex
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -26,6 +28,23 @@ app = typer.Typer(
 )
 
 DEFAULT_REVIEW_STORE = Path(".enten/reviews.json")
+_GENERATED_PARTS = frozenset(
+    {
+        ".enten",
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "__pycache__",
+        "build",
+        "coverage",
+        "dist",
+        "htmlcov",
+        "node_modules",
+        "out",
+    }
+)
 
 
 @app.command()
@@ -80,7 +99,7 @@ def review_command(
             "verification command cannot be empty",
             param_hint="--verify-command",
         )
-    resolved_sha = sha or _local_content_sha(repo)
+    resolved_sha = sha or _local_content_sha(repo, store_path)
     request = ReviewRequest(
         repository_id=str(repo),
         repository_full_name=None,
@@ -212,14 +231,54 @@ def _aggregate_precision(report: EvalReport) -> float:
     return total_correct / total_bot if total_bot else 0.0
 
 
-def _local_content_sha(repository: Path) -> str:
+def _local_content_sha(repository: Path, store_path: Path | None = None) -> str:
     digest = hashlib.sha256()
-    for source in sorted(repository.rglob("*")):
-        if not source.is_file() or ".git" in source.relative_to(repository).parts:
+    excluded_store = _store_relative_to_repository(repository, store_path)
+    for relative in _local_content_paths(repository):
+        if _GENERATED_PARTS.intersection(relative.parts) or relative == excluded_store:
             continue
-        digest.update(source.relative_to(repository).as_posix().encode())
+        source = repository / relative
+        if source.is_symlink() or not source.is_file():
+            continue
+        digest.update(relative.as_posix().encode())
         digest.update(source.read_bytes())
     return digest.hexdigest()
+
+
+def _local_content_paths(repository: Path) -> tuple[Path, ...]:
+    try:
+        completed = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(repository),
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        completed = None
+    if completed is not None and completed.returncode == 0:
+        return tuple(sorted(Path(os.fsdecode(raw)) for raw in completed.stdout.split(b"\0") if raw))
+    return tuple(sorted(path.relative_to(repository) for path in repository.rglob("*")))
+
+
+def _store_relative_to_repository(
+    repository: Path,
+    store_path: Path | None,
+) -> Path | None:
+    if store_path is None:
+        return None
+    try:
+        return store_path.resolve().relative_to(repository.resolve())
+    except ValueError:
+        return None
 
 
 if __name__ == "__main__":

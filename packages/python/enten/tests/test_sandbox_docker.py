@@ -19,7 +19,7 @@ import anyio
 import pytest
 
 from enten.sandbox import SandboxHandle
-from enten.sandbox.docker import DockerSandbox
+from enten.sandbox.docker import DockerExecOutputLimitError, DockerSandbox
 
 
 def _docker_available() -> bool:
@@ -59,6 +59,41 @@ async def test_run_prints_hi():
     assert result.stdout == "hi\n"
     assert result.stderr == ""
     assert result.duration_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_run_separates_stdout_and_stderr() -> None:
+    async with _fresh_sandbox() as (handle, provider):
+        result = await provider.run(
+            handle,
+            ["sh", "-c", "printf output; printf error >&2"],
+        )
+
+    assert result.stdout == "output"
+    assert result.stderr == "error"
+
+
+@pytest.mark.asyncio
+async def test_run_destroys_container_on_combined_output_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(DockerSandbox, "MAX_OUTPUT_BYTES", 64 * 1024)
+    provider = DockerSandbox()
+    handle = await provider.create({})
+
+    with pytest.raises(DockerExecOutputLimitError):
+        await provider.run(
+            handle,
+            ["python", "-c", "import os; os.write(1, b'x' * 70000)"],
+        )
+    running = subprocess.run(
+        ["docker", "ps", "-q", "--filter", f"id={handle.id}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert running.stdout.strip() == ""
 
 
 @pytest.mark.asyncio

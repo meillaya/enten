@@ -87,16 +87,19 @@ This starts loopback-bound Postgres/pgvector and Jaeger without requiring GitHub
 
 ### Full GitHub App stack
 
-1. Create a GitHub App from `packages/ts/app/github-app.yml` and install it on a **public test repository**.
+1. Replace the example webhook origin in `packages/ts/app/github-app.yml` with the externally reachable HTTPS origin that routes to this edge, then create the GitHub App and install it on a **public test repository**. The manifest contains a valid URL-shaped placeholder, not environment-variable interpolation.
 2. Copy `.env.example` to `.env`; replace `GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, and `GITHUB_APP_PRIVATE_KEY_PATH` with real values.
 3. Select a trusted verifier image and command. The default `python -m compileall -q .` is a syntax smoke check, not a project test suite.
 4. Start the stack:
 
 ```bash
 scripts/dev-up.sh
+scripts/healthcheck-all.sh
 curl --fail http://127.0.0.1:3000/health
 open http://127.0.0.1:16686
 ```
+
+`healthcheck-all.sh` probes the running Compose services, Postgres, and the edge. It does not run the static release suite; use `make check` separately for lint, typecheck, build, coverage, eval, permission, secret, and dependency gates.
 
 For the pinned HTTPie demonstration image:
 

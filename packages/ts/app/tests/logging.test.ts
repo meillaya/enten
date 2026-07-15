@@ -23,6 +23,13 @@ import { createLogger, newRunId, pinoLogger, withRunId } from "../src/logging.js
 
 /** Pattern from the spec — used across both test modules. */
 const RUN_ID_RE = /^pr_[a-z0-9]{12}$/;
+const SECRET_KEYS = [
+  "api_key",
+  "token",
+  "webhook_secret",
+  "password",
+  "private_key",
+] as const;
 
 /**
  * Install a stdout spy that records every write into `lines`. Returns
@@ -69,16 +76,35 @@ describe("createLogger", () => {
     expect(line.level).toBe("info");
   });
 
-  it("redacts api_key fields nested under any object", () => {
-    // pino's `*.api_key` path only matches nested keys; see learnings.md.
+  it.each(SECRET_KEYS)("redacts top-level %s fields", (key) => {
+    // Given
     const cap = captureStdout();
     cleanups.push(cap.restore);
     const logger = createLogger("redact");
-    logger.info({ settings: { api_key: "sk-fake" } }, "login");
 
+    // When
+    logger.info({ [key]: "secret-value" }, "login");
+
+    // Then
     expect(cap.lines).toHaveLength(1);
     const line = JSON.parse(cap.lines[0]!);
-    expect(line.settings.api_key).toBe("[REDACTED]");
+    expect(line[key]).toBe("[REDACTED]");
+    expect(line.msg).toBe("login");
+  });
+
+  it.each(SECRET_KEYS)("redacts nested %s fields", (key) => {
+    // Given
+    const cap = captureStdout();
+    cleanups.push(cap.restore);
+    const logger = createLogger("redact");
+
+    // When
+    logger.info({ settings: { [key]: "secret-value" } }, "login");
+
+    // Then
+    expect(cap.lines).toHaveLength(1);
+    const line = JSON.parse(cap.lines[0]!);
+    expect(line.settings[key]).toBe("[REDACTED]");
     expect(line.msg).toBe("login");
   });
 });

@@ -15,6 +15,8 @@ env:
   GITHUB_APP_ID: "0"
   GITHUB_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nSTUB\n-----END RSA PRIVATE KEY-----"
   GITHUB_WEBHOOK_SECRET: stub-webhook-secret
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_LINUX_X64_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 
 jobs:
   python:
@@ -26,7 +28,7 @@ jobs:
         python-version: ["3.11", "3.12"]
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
         env:
           POSTGRES_USER: enten
           POSTGRES_PASSWORD: enten
@@ -53,11 +55,16 @@ jobs:
         run: uv sync --project packages/python/enten --all-groups --locked
       - name: Install gitleaks 8.30.1
         run: |
+          install_dir="$(mktemp -d)"
+          trap 'rm -rf "$install_dir"' EXIT
+          archive="$install_dir/gitleaks.tar.gz"
           curl --fail --silent --show-error --location \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz gitleaks
-          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-          test "$(gitleaks version)" = "8.30.1"
+            --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$install_dir" gitleaks
+          sudo install -m 0755 "$install_dir/gitleaks" /usr/local/bin/gitleaks
+          test "$(gitleaks version)" = "$GITLEAKS_VERSION"
       - name: Ruff 0.15.18
         run: uvx --from ruff==0.15.18 ruff check .
       - name: Python tests and coverage
@@ -115,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
         env:
           POSTGRES_USER: enten
           POSTGRES_PASSWORD: enten
@@ -166,10 +173,15 @@ jobs:
           fetch-depth: 0
       - name: Install gitleaks 8.30.1
         run: |
+          install_dir="$(mktemp -d)"
+          trap 'rm -rf "$install_dir"' EXIT
+          archive="$install_dir/gitleaks.tar.gz"
           curl --fail --silent --show-error --location \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz gitleaks
-          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-          test "$(gitleaks version)" = "8.30.1"
+            --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$install_dir" gitleaks
+          sudo install -m 0755 "$install_dir/gitleaks" /usr/local/bin/gitleaks
+          test "$(gitleaks version)" = "$GITLEAKS_VERSION"
       - name: Scan history and release archive
         run: make security

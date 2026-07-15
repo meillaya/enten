@@ -1,7 +1,7 @@
 name: enten-bot
 url: https://github.com/Meillaya/enten
 hook_attributes:
-  url: $RENDER_EXTERNAL_URL/webhook
+  url: https://example.com/replace-with-your-enten-origin/webhook
   active: true
 redirect_url: https://github.com/Meillaya/enten
 public: false

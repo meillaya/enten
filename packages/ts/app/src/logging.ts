@@ -71,6 +71,11 @@ export function createLogger(name: string): Logger {
     },
     redact: {
       paths: [
+        "api_key",
+        "token",
+        "webhook_secret",
+        "password",
+        "private_key",
         "*.api_key",
         "*.token",
         "*.webhook_secret",
@@ -143,7 +148,7 @@ export function newRunId(): string {
 
   // Walk the first 60 bits of the digest (15 hex digits) and pack each
   // group of 5 bits into one base32 char. Twelve groups = 12 chars.
-  const suffix: string[] = new Array(12).fill(BASE32_ALPHABET[0]!);
+  const suffix: string[] = new Array(12).fill(BASE32_ALPHABET.charAt(0));
   for (let i = 0; i < 12; i += 1) {
     const bitOffset = i * 5;
     const hexStart = Math.floor(bitOffset / 4);
@@ -154,7 +159,7 @@ export function newRunId(): string {
     // and pull the remaining bits from `hi`.
     const loBits = (lo << nibbleOffset) & 0x1f;
     const hiBits = nibbleOffset === 0 ? 0 : hi >> (4 - nibbleOffset);
-    suffix[i] = BASE32_ALPHABET[loBits | hiBits]!;
+    suffix[i] = BASE32_ALPHABET.charAt(loBits | hiBits);
   }
   return `${RUN_ID_PREFIX}${suffix.join("")}`;
 }

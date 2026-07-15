@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 
 async def test_pipeline_persists_before_generation_and_records_all_stages(
     tmp_path: Path,
@@ -103,7 +105,19 @@ async def test_pipeline_persists_before_generation_and_records_all_stages(
     assert len(str(payload)) < 70_000
 
 
-async def test_pipeline_arbiter_uses_failing_verification_exit_codes(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("exit_codes", "expected_verdict"),
+    [
+        ((1, 1, 1), "fail"),
+        ((1, 0, 1), "fail"),
+        ((0, 1, 0), "flaky"),
+    ],
+)
+async def test_pipeline_arbiter_requires_two_successful_verification_runs(
+    tmp_path: Path,
+    exit_codes: tuple[int, int, int],
+    expected_verdict: str,
+) -> None:
     from enten.pipeline import InMemoryReviewStore, PipelineDependencies, execute_review
     from enten.review.run import (
         EffectReceipt,
@@ -123,12 +137,11 @@ async def test_pipeline_arbiter_uses_failing_verification_exit_codes(tmp_path: P
     class Verifier:
         async def verify(self, request: object) -> VerificationEvidence:
             return VerificationEvidence(
-                exit_codes=(1, 1, 1), command=("pytest",), log_paths=("result.json",)
+                exit_codes=exit_codes, command=("pytest",), log_paths=("result.json",)
             )
 
     class Effects:
         async def publish(self, payload: object) -> EffectReceipt:
-            assert "failure" in str(payload)
             return EffectReceipt(state="posted")
 
     request = ReviewRequest(
@@ -153,5 +166,5 @@ async def test_pipeline_arbiter_uses_failing_verification_exit_codes(tmp_path: P
 
     # Then
     assert result.run.verification is not None
-    assert result.run.verification.exit_codes == (1, 1, 1)
-    assert result.run.verification.verdict == "fail"
+    assert result.run.verification.exit_codes == exit_codes
+    assert result.run.verification.verdict == expected_verdict

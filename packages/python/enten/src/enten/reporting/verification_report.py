@@ -1,11 +1,3 @@
-"""Verification report generator with file:line enforcement.
-
-Aggregates outputs from static analysis (T19), security checks (T20), the
-review draft (T30), the suggested patch (T31), generated tests (T32),
-failure attribution (T33), and deterministic verification (T34) into a
-GitHub Checks API payload and an idempotent PR comment.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -25,7 +17,7 @@ from enten.verification.verify import VerificationResult
 
 
 class Patch(BaseModel):
-    """A suggested code patch (placeholder until T31 lands)."""
+    """Optional standalone patch content attached to a review."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
     content: str = ""

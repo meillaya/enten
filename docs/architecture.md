@@ -50,19 +50,11 @@ The release accepts public GitHub repositories only. The worker:
 
 Private repositories, arbitrary clone URLs, symlinks, submodules, binary payloads, unsafe relative paths, and repository secrets are outside this release boundary.
 
-### Sandbox
+### Verifier transport and resource contract
 
-Docker is the only verified backend. The worker sends a validated archive to a non-root process inside a tmpfs workspace; it does not bind a worker-container path back through the host daemon. The verification container has:
+Docker is the only verified backend. The worker collects tracked and unignored text files, rejects unsafe paths, and excludes symlinks, binary files, repository metadata, dependency/build directories, and secret-shaped filenames. Input is bounded to 2,000 files, 2 MiB per file, and 64 MiB total before transport. The worker creates a normalized tar stream with relative POSIX paths, mode `0644`, and uid/gid `1000`, then sends it through the Docker exec socket into `/workspace`. No worker-local checkout path is bind-mounted into the verifier.
 
-- a digest-pinned image selected by the trusted operator;
-- read-only root filesystem;
-- tmpfs `/workspace` and `/tmp` with size bounds;
-- no network and no Linux capabilities;
-- `no-new-privileges`;
-- PID, memory, CPU, and wall-clock limits;
-- label `enten.sandbox=true` for ownership-aware cleanup.
-
-The verifier command comes from operator configuration, not webhook input, and is executed as argv without a shell. E2B selection raises an actionable unavailable-backend error before network activity.
+The verifier uses a digest-pinned operator-selected image, uid/gid `1000`, a read-only root filesystem, no network, no Linux capabilities, and `no-new-privileges`. `/workspace` is a 512 MiB tmpfs, `/tmp` is a 128 MiB `noexec` tmpfs, and the container is limited to 256 PIDs, 4 GiB memory, and two CPUs. A command defaults to 120 seconds and cannot request more than 600 seconds; combined stdout/stderr is capped at 8 MiB. The verifier command comes from operator configuration, not webhook input, and is executed as argv without a shell. Containers carry `enten.sandbox=true` for ownership-aware cleanup. E2B selection raises an actionable unavailable-backend error before network activity.
 
 ## Durable state
 

@@ -10,11 +10,13 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Literal, Protocol, TypeVar
 
+from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict
 
 from enten.sandbox.models import ExecResult
 
 SelectorT = TypeVar("SelectorT")
+HandleT = TypeVar("HandleT", bound="SandboxHandle")
 
 
 class RunSummary(BaseModel):
@@ -52,29 +54,29 @@ class SandboxHandle(Protocol):
     def id(self) -> str: ...
 
 
-class SandboxFactory(Protocol):
+class SandboxFactory(Protocol[HandleT]):
     """Minimal sandbox factory interface used by the flaky handler."""
 
-    async def create(self, repo_files: dict[str, str]) -> SandboxHandle: ...
+    async def create(self, repo_files: dict[str, str]) -> HandleT: ...
     async def run(
         self,
-        handle: SandboxHandle,
+        handle: HandleT,
         cmd: list[str],
         timeout_seconds: int = 120,
     ) -> ExecResult: ...
     async def upload(
         self,
-        handle: SandboxHandle,
+        handle: HandleT,
         files: dict[str, str | bytes],
     ) -> None: ...
-    async def destroy(self, handle: SandboxHandle) -> None: ...
+    async def destroy(self, handle: HandleT) -> None: ...
 
 
 class RunnerResult(Protocol):
     exit_code: int
 
 
-Runner = Callable[[SandboxHandle, SelectorT], Awaitable[RunnerResult]]
+Runner = Callable[[HandleT, SelectorT], Awaitable[RunnerResult]]
 
 
 def _result_to_summary(result: RunnerResult) -> RunSummary:
@@ -82,11 +84,12 @@ def _result_to_summary(result: RunnerResult) -> RunSummary:
 
 
 async def run_with_flaky_check(
-    sandbox_factory: SandboxFactory,
-    runner: Runner[SelectorT],
+    sandbox_factory: SandboxFactory[HandleT],
+    runner: Runner[HandleT, SelectorT],
     test_selector: SelectorT,
     *,
     runs: int = 3,
+    repo_files: dict[str, str] | None = None,
 ) -> FlakyRunSummary:
     """Run ``test_selector`` in ``runs`` fresh sandboxes and classify flakiness.
 
@@ -97,11 +100,12 @@ async def run_with_flaky_check(
         raise ValueError("runs must be positive")
     completed_runs: list[Run] = []
     error_occurred = False
+    source_files = repo_files or {}
 
     for _ in range(runs):
-        handle: SandboxHandle | None = None
+        handle: HandleT | None = None
         try:
-            handle = await sandbox_factory.create({})
+            handle = await sandbox_factory.create(dict(source_files))
             start = time.monotonic()
             result = await runner(handle, test_selector)
             duration_ms = int((time.monotonic() - start) * 1000)
@@ -118,7 +122,8 @@ async def run_with_flaky_check(
         finally:
             if handle is not None:
                 try:
-                    await sandbox_factory.destroy(handle)
+                    with CancelScope(shield=True):
+                        await sandbox_factory.destroy(handle)
                 except Exception:
                     error_occurred = True
 

@@ -110,3 +110,7 @@ Jaeger is available at `http://127.0.0.1:16686` in Compose. A complete review ha
 ## Cost and model components
 
 The default production worker generator makes no LLM calls. `enten cost` reports persisted local `ReviewRun` totals; the LLM client additionally writes `llm_calls` when invoked by explicit model/eval callers. Provider outage procedures do not apply to the default worker.
+
+## Error-budget check
+
+`scripts/error-budget-check.sh` measures jobs that entered the real terminal states `done` or `failed` during the last 24 hours, using `updated_at`. A database/query error, malformed result, or a window with no terminal jobs is an unknown health state and exits nonzero; it is never reported as a passing budget. Set `ERROR_BUDGET_THRESHOLD` to a decimal from `0` through `1` when the default `0.99` is not appropriate.

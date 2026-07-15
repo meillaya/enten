@@ -2,6 +2,8 @@
 
 `packages/ts/app/github-app.yml` is the executable authority. The release subscribes only to `pull_request` and requests exactly:
 
+Before creating the App, replace the valid `example.com` webhook placeholder in that manifest with the externally reachable HTTPS origin that routes to `/webhook`; GitHub App manifests do not expand deployment environment variables.
+
 | Permission | Level | Reachable operation |
 |---|---:|---|
 | `metadata` | read | Installation/repository routing |

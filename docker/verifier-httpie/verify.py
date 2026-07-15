@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
-import stat
 import sys
 from pathlib import Path
 from typing import Final, NoReturn
@@ -10,8 +10,14 @@ from typing import Final, NoReturn
 EXPECTED_REPOSITORY: Final = "httpie/cli"
 EXPECTED_REVISION: Final = "2105caa49bae87c5809c274e407619a0de2639d1"
 EXPECTED_TREE: Final = "5be8d10a92efc928460e86f1ce6dcabbea1a728a"
-EXPECTED_SELECTOR: Final = "tests/test_offline.py"
+EXPECTED_SOURCE_DIGEST: Final = "43ea1a4bd1c6b5725df2775f4665f092305f16119c806b84de51e5ee5261268e"
+EXPECTED_SELECTOR: Final = "tests/test_parser_schema.py"
 WORKSPACE: Final = Path("/workspace")
+MANIFEST_PATH: Final = Path(".enten-trusted/source-manifest.json")
+DIGEST_DOMAIN: Final = b"enten-normalized-source-v1\0"
+MAX_SOURCE_FILES: Final = 2_000
+MAX_FILE_BYTES: Final = 2 * 1024 * 1024
+MAX_TOTAL_BYTES: Final = 64 * 1024 * 1024
 CONTRACT_EXIT: Final = 64
 
 
@@ -26,89 +32,94 @@ def _checked_environment(name: str, expected: str) -> None:
         _reject(f"{name} must be {expected!r}, received {actual!r}")
 
 
-def _git_directory(workspace: Path) -> Path:
-    marker = workspace / ".git"
-    if marker.is_dir():
-        return marker
-    if marker.is_file():
-        prefix = "gitdir: "
-        value = marker.read_text(encoding="utf-8").strip()
-        if not value.startswith(prefix):
-            _reject("/workspace/.git is not a Git directory pointer")
-        return (workspace / value.removeprefix(prefix)).resolve()
-    _reject("/workspace must be a Git checkout")
+def _read_bounded(path: Path, limit: int) -> bytes:
+    size = path.stat().st_size
+    if size > limit:
+        _reject(f"source file exceeds {limit} bytes: {path.relative_to(WORKSPACE)}")
+    with path.open("rb") as source:
+        content = source.read(limit + 1)
+    if len(content) > limit:
+        _reject(f"source file exceeds {limit} bytes: {path.relative_to(WORKSPACE)}")
+    return content
 
 
-def _packed_reference(git_directory: Path, reference: str) -> str:
-    packed_refs = git_directory / "packed-refs"
-    if not packed_refs.is_file():
-        _reject(f"Git reference {reference!r} is unavailable")
-    for line in packed_refs.read_text(encoding="utf-8").splitlines():
-        if line.startswith(("#", "^")):
+def _manifest() -> dict[str, str | int]:
+    path = WORKSPACE / MANIFEST_PATH
+    if not path.is_file() or path.is_symlink():
+        _reject(f"trusted manifest {MANIFEST_PATH} is missing")
+    raw = _read_bounded(path, 16 * 1024)
+    try:
+        parsed = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _reject("trusted manifest is not valid UTF-8 JSON")
+    if not isinstance(parsed, dict):
+        _reject("trusted manifest must be a JSON object")
+    expected_keys = {
+        "head_sha",
+        "repository_full_name",
+        "repository_id",
+        "source_digest",
+        "version",
+    }
+    if set(parsed) != expected_keys:
+        _reject("trusted manifest fields are not exact")
+    canonical = json.dumps(
+        parsed,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if raw != canonical:
+        _reject("trusted manifest is not canonical JSON")
+    return parsed
+
+
+def _source_digest() -> str:
+    entries: list[tuple[str, bytes]] = []
+    total_bytes = 0
+    for path in WORKSPACE.rglob("*"):
+        relative = path.relative_to(WORKSPACE)
+        if relative == MANIFEST_PATH or path.is_dir():
             continue
-        revision, separator, name = line.partition(" ")
-        if separator and name == reference:
-            return revision
-    _reject(f"Git reference {reference!r} is unavailable")
-
-
-def _head_revision(git_directory: Path) -> str:
-    head = (git_directory / "HEAD").read_text(encoding="ascii").strip()
-    prefix = "ref: "
-    if not head.startswith(prefix):
-        return head
-    reference = head.removeprefix(prefix)
-    loose = git_directory / reference
-    if loose.is_file():
-        return loose.read_text(encoding="ascii").strip()
-    return _packed_reference(git_directory, reference)
-
-
-def _git_object(kind: bytes, content: bytes) -> bytes:
-    header = kind + b" " + str(len(content)).encode("ascii") + b"\0"
-    return hashlib.sha1(header + content, usedforsecurity=False).digest()
-
-
-def _blob(path: Path) -> bytes:
-    if path.is_symlink():
-        return _git_object(b"blob", os.readlink(path).encode())
-    return _git_object(b"blob", path.read_bytes())
-
-
-def _tree(path: Path, *, root: bool = False) -> bytes:
-    entries: list[tuple[bytes, bytes]] = []
-    for child in path.iterdir():
-        if root and child.name == ".git":
-            continue
-        child_stat = child.lstat()
-        name = child.name.encode()
-        if stat.S_ISDIR(child_stat.st_mode):
-            mode = b"40000"
-            digest = _tree(child)
-            sort_key = name + b"/"
-        elif stat.S_ISLNK(child_stat.st_mode):
-            mode = b"120000"
-            digest = _blob(child)
-            sort_key = name
-        elif stat.S_ISREG(child_stat.st_mode):
-            mode = b"100755" if child_stat.st_mode & stat.S_IXUSR else b"100644"
-            digest = _blob(child)
-            sort_key = name
-        else:
-            _reject(f"unsupported filesystem entry: {child.relative_to(WORKSPACE)}")
-        entries.append((sort_key, mode + b" " + name + b"\0" + digest))
-    content = b"".join(entry for _, entry in sorted(entries))
-    return _git_object(b"tree", content)
+        if path.is_symlink() or not path.is_file():
+            _reject(f"unsupported source entry: {relative}")
+        if len(entries) >= MAX_SOURCE_FILES:
+            _reject(f"source contains more than {MAX_SOURCE_FILES} files")
+        content = _read_bounded(path, MAX_FILE_BYTES)
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            _reject(f"source file is not normalized UTF-8 text: {relative}")
+        total_bytes += len(content)
+        if total_bytes > MAX_TOTAL_BYTES:
+            _reject(f"source exceeds {MAX_TOTAL_BYTES} aggregate bytes")
+        entries.append((relative.as_posix(), content))
+    digest = hashlib.sha256(DIGEST_DOMAIN)
+    for relative, content in sorted(entries):
+        path_bytes = relative.encode("utf-8")
+        digest.update(len(path_bytes).to_bytes(8, "big"))
+        digest.update(path_bytes)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
 
 
 def _validate_source() -> None:
-    git_directory = _git_directory(WORKSPACE)
-    revision = _head_revision(git_directory)
-    if revision != EXPECTED_REVISION:
-        _reject(f"checkout revision must be {EXPECTED_REVISION}, received {revision}")
-    tree = _tree(WORKSPACE, root=True).hex()
-    if tree != EXPECTED_TREE:
-        _reject(f"checkout tree must be {EXPECTED_TREE}, received {tree}")
+    manifest = _manifest()
+    if manifest["version"] != 1:
+        _reject("trusted manifest version must be 1")
+    repository_id = manifest["repository_id"]
+    if not isinstance(repository_id, str) or not repository_id.isdecimal():
+        _reject("repository_id must be a nonempty decimal string")
+    if manifest["repository_full_name"] != EXPECTED_REPOSITORY:
+        _reject(f"repository_full_name must be {EXPECTED_REPOSITORY!r}")
+    if manifest["head_sha"] != EXPECTED_REVISION:
+        _reject(f"head_sha must be {EXPECTED_REVISION!r}")
+    if manifest["source_digest"] != EXPECTED_SOURCE_DIGEST:
+        _reject(f"source_digest must be {EXPECTED_SOURCE_DIGEST!r}")
+    actual_digest = _source_digest()
+    if actual_digest != EXPECTED_SOURCE_DIGEST:
+        _reject(f"transported source digest must be {EXPECTED_SOURCE_DIGEST!r}")
     if not (WORKSPACE / EXPECTED_SELECTOR).is_file():
         _reject(f"selector {EXPECTED_SELECTOR!r} is missing")
 

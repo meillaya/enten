@@ -114,7 +114,7 @@ Build a GitHub-integrated AI engineering assistant that reviews PRs, finds bugs,
 - M4 TDD split: unit tests for deterministic code, eval for LLM
 - M5 GitHub App primary; Actions for bot's own CI only
 - M6 No `contents: write` permission
-- M7 Flaky test: 3x runs, ≥2/3 = pass
+- M7 Flaky test: 3/3 = pass, 2/3 = accepted flaky, ≤1/3 = fail
 - M8 Bot ignores its own PRs
 
 ---
@@ -158,7 +158,7 @@ Ship a GitHub-integrated AI engineering agent that, on every PR opened on a demo
 7. **Observability** — one OTel trace per PR with structured logs
 8. **2 LLM implementations** (OpenAI-compat + Ollama); Anthropic via OpenRouter
 9. **2 sandbox implementations** (Docker + E2B); dropped Daytona
-10. **Flaky test handling** — 3x runs, ≥2/3 = pass
+10. **Flaky test handling** — 3/3 = pass, 2/3 = accepted flaky, ≤1/3 = fail
 11. **Bot ignores own PRs**
 12. **TDD** for deterministic code; **eval** for LLM quality
 
@@ -231,7 +231,7 @@ Wave 3 — Static + Indexing — FIRST LANDMARK (bot comments without LLM):
   T19  Semgrep wrapper + tree-sitter custom rules engine
   T20  Security checks (gitleaks, bandit) + integration
   T21  PR comment formatter + Checks API reporter (no-LLM mode)
-  T22  Flaky test handler (3x runs, ≥2/3 pass)
+  T22  Flaky test handler (3/3 pass, 2/3 accepted flaky, ≤1/3 fail)
   T23  Bot GitHub App registration + permission scope doc + bot-self-ignore
   — BOT CAN NOW REVIEW PRs WITH STATIC + SECURITY + CHECKS API (NO LLM) —
 
@@ -321,7 +321,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 - [x] 19. Semgrep wrapper + tree-sitter custom rules — wrapper around `semgrep --json --config auto`, custom rules in rules/
 - [x] 20. Security checks — gitleaks (secrets) + bandit (Py) + semgrep security rules, JSON output, file:line attribution
 - [x] 21. PR comment formatter + Checks API reporter — markdown with collapsible sections; Checks API run with conclusion
-- [x] 22. Flaky test handler — 3x sandbox runs, ≥2/3 pass = PASS, 1/3 = flaky (warning), 0/3 = FAIL
+- [x] 22. Flaky test handler — 3/3 pass, 2/3 accepted flaky, ≤1/3 fail
 - [x] 23. GitHub App registration + permission scope doc + bot-self-ignore — manifest at packages/ts/app/github-app.yml, scopes pull_requests:write, checks:write, metadata:read, NO contents:write
 - [x] 24. LLMProvider interface — complete() / stream() / count_tokens() / tool_use(); pydantic schemas for all params
 - [x] 25. OpenAICompatProvider — covers OpenAI, OpenRouter (Anthropic routed here), LM Studio, llama.cpp-server; tool-use, streaming, token counting
@@ -2157,16 +2157,15 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 
 ### Task 22 — Flaky test handler
 
-- [ ] **22. Flaky test handler — 3x sandbox runs, ≥2/3 pass = PASS, 1/3 = flaky (warning), 0/3 = FAIL**
+- [x] **22. Flaky test handler — 3/3 pass, 2/3 accepted flaky, ≤1/3 fail**
 
   **What to do**:
   - `packages/python/enten/src/enten/verification/flaky.py` exposing `run_with_flaky_check(sandbox, runner, test_selector, *, runs=3) → FlakyRunSummary`.
   - `FlakyRunSummary`: `runs: list[Run]` where `Run(exit_code, summary, duration_ms, sandbox_id)` and `outcome: Literal["pass","flaky","fail","error"]`, `majority_pass_count`.
   - Logic:
     - 3/3 pass → `pass` (with note: "3/3 runs passed")
-    - ≥2/3 pass (but not all 3) → `flaky` (warning: "Tests appear flaky — N of 3 runs passed")
-    - 1/3 → `flaky` (with warning)
-    - 0/3 → `fail`
+    - 2/3 pass → `flaky` (accepted with warning: "Tests appear flaky — 2 of 3 runs passed")
+    - 1/3 or 0/3 pass → `fail`
     - any error (timeout, sandbox down) → `error`
   - Run each in its own sandbox instantiation (no state carry-over); use `sequential` timing, not parallel — gives worst-case for flakiness detection.
   - Tests: `tests/test_flaky_handler.py` with a fake runner that returns `exit_code=0,1,0` over 3 calls → `flaky` outcome; and `0,1,1` → `fail`.
@@ -2190,8 +2189,8 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
   - Testing flakiness theory: https://martinfowler.com/articles/nonDeterministicTests.html — context
 
   **Acceptance Criteria**:
-  - [ ] `uv run pytest packages/python/enten/tests/test_flaky_handler.py` → 4+ tests pass (3/3 pass, 2/3, 1/3, 0/3, error)
-  - [ ] `run_with_flaky_check` is invoked 3 times with separate `SandboxHandle.create(...)` (verified via mock)
+  - [x] `uv run pytest packages/python/enten/tests/test_flaky_handler.py` → tests pass for 3/3, 2/3, 1/3, 0/3, and error outcomes
+  - [x] `run_with_flaky_check` creates and destroys a separate sandbox for every run
 
   **QA Scenarios (MANDATORY)**:
 
@@ -2229,7 +2228,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
 - [ ] **23. GitHub App registration + permission scope doc + bot-self-ignore — manifest at packages/ts/app/github-app.yml, scopes pull_requests:write, checks:write, metadata:read, NO contents:write**
 
   **What to do**:
-  - Author `packages/ts/app/github-app.yml` (manifest) with fields: `name`, `url`, `hook_attributes.url` (`$RENDER_EXTERNAL_URL/webhook`), `redirect_url`, `public: false`, `default_events: [pull_request, pull_request_review, issue_comment]`, `default_permissions: {pull_requests: write, checks: write, metadata: read}`.
+  - Author `packages/ts/app/github-app.yml` with a replaceable absolute HTTPS hook URL, `public: false`, only `pull_request` events, and `default_permissions: {pull_requests: write, checks: write, metadata: read}`.
   - Add explicit negative-scope docs in `docs/permissions.md`:
     - Bot has ONLY: `pull_requests: write` (comments), `checks: write` (check runs), `metadata: read` (repo visibility).
     - Bot does NOT have: `contents: write` (cannot push or modify branches), `issues: write` (cannot edit issues), `actions: write` (cannot modify workflows).
@@ -3068,7 +3067,7 @@ Sandbox everything downstream depends on is built first, then LLM layers add on 
     6. Update `pr_reviews.conclusion` based on outcome: `pass | fail | error`.
   - Mapping:
     - `FlakyRunSummary.outcome='pass'` → `pass`
-    - `outcome='flaky'` → `flaky` (still pass; flagged in Checks API)
+    - `outcome='flaky'` → `flaky` (accepted as a neutral, flagged Checks API result)
     - `outcome='fail'` → `fail`
     - `outcome='error'` → `error`
   - **Determinism guarantee**: same PR × same `commit_sha` (and same fixtures) → byte-identical `outcome` and `exit_codes` lists.
