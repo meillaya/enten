@@ -25,7 +25,11 @@
       "required": ["id", "full_name"],
       "properties": {
         "id": { "type": "integer", "minimum": 1 },
-        "full_name": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" }
+        "full_name": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^/\\s]+/[^/\\s]+$"
+        }
       }
     },
     "pull_request": {
@@ -46,7 +50,7 @@
       "required": ["id", "login"],
       "properties": {
         "id": { "type": "integer", "minimum": 1 },
-        "login": { "type": "string", "minLength": 1 }
+        "login": { "type": "string", "minLength": 1, "maxLength": 255 }
       }
     },
     "review_contract": {

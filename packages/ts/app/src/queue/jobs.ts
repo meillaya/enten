@@ -25,7 +25,7 @@ export const PrJobEnvelopeSchema = z
     repository: z
       .object({
         id: z.number().int().positive(),
-        full_name: z.string().regex(/^[^/\s]+\/[^/\s]+$/),
+        full_name: z.string().max(255).regex(/^[^/\s]+\/[^/\s]+$/),
       })
       .strict(),
     pull_request: z
@@ -38,7 +38,7 @@ export const PrJobEnvelopeSchema = z
     actor: z
       .object({
         id: z.number().int().positive(),
-        login: z.string().min(1),
+        login: z.string().min(1).max(255),
       })
       .strict(),
     review_contract: z.string().regex(/^[0-9a-f]{64}$/),

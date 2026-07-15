@@ -36,6 +36,21 @@ describe("PrJobEnvelopeSchema", () => {
     // Then
     expect(result.success).toBe(false);
   });
+
+  it("enforces the shared repository and actor text bounds", () => {
+    expect(
+      PrJobEnvelopeSchema.safeParse({
+        ...envelope,
+        repository: { ...envelope.repository, full_name: `owner/${"r".repeat(250)}` },
+      }).success,
+    ).toBe(false);
+    expect(
+      PrJobEnvelopeSchema.safeParse({
+        ...envelope,
+        actor: { ...envelope.actor, login: "a".repeat(256) },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("computeIdempotencyKey", () => {

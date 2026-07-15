@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,20 @@ def test_review_contract_digest_matches_the_shared_edge_contract() -> None:
     )
 
     assert digest == "d8cd300e795765debd5620f2e5bc68ab5fd408722774b6258266eeb55fc91e08"
+
+
+def test_python_parser_consumes_the_shared_contract_fixtures() -> None:
+    from pydantic import ValidationError
+
+    from enten.pipeline import ReviewJobEnvelope
+
+    fixtures = Path(__file__).parents[4] / "contracts" / "fixtures"
+    valid = json.loads((fixtures / "pr-job-envelope.valid.json").read_text(encoding="utf-8"))
+    invalid = json.loads((fixtures / "pr-job-envelope.invalid.json").read_text(encoding="utf-8"))
+
+    ReviewJobEnvelope.model_validate(valid)
+    with pytest.raises(ValidationError):
+        ReviewJobEnvelope.model_validate(invalid)
 
 
 def test_job_envelope_parses_exact_contract_shape(tmp_path: Path) -> None:
@@ -65,9 +80,11 @@ def test_job_envelope_parses_exact_contract_shape(tmp_path: Path) -> None:
         (("delivery_id",), "not-a-uuid"),
         (("repository", "id"), 0),
         (("repository", "full_name"), "missing-owner"),
+        (("repository", "full_name"), f"owner/{'r' * 250}"),
         (("pull_request", "head_sha"), "not-a-sha"),
         (("action",), "closed"),
         (("actor", "id"), 0),
+        (("actor", "login"), "a" * 256),
         (("review_contract",), "invalid"),
         (("traceparent",), "invalid"),
     ],
