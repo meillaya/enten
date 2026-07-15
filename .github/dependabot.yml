@@ -20,8 +20,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    # Dev updates only — runtime Python deps are bumped by hand
-    # because they ripple through the lockfile and uv.lock validation.
+    # Group development updates; runtime dependencies remain eligible
+    # for individual PRs so every lockfile change stays independently reviewable.
     groups:
       pip-dev:
         dependency-type: "development"

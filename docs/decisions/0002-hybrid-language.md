@@ -26,5 +26,5 @@ Split the work along the natural axis:
 - A shared `contracts/` package defines the cross-language schema (event types, telemetry tags) so the two halves do not drift.
 - We must keep test infrastructure honest across the language boundary.
 - Alternatives considered and rejected:
-  - **All Python** (FastAPI at the edge) — `@octokit/webhooks` would have to be re-implemented; Hono is materially faster and leaner than any Python framework for webhook fan-out.
+  - **All Python** (FastAPI at the edge) — `@octokit/webhooks` would have to be re-implemented, creating a second ingress implementation to maintain.
   - **All TypeScript** — it would move the existing Python indexing, verification, and optional model libraries without reducing the network-edge trust boundary.
