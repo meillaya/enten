@@ -29,8 +29,15 @@ def test_python_parser_consumes_the_shared_contract_fixtures() -> None:
     invalid_coercions = json.loads(
         (fixtures / "pr-job-envelope.invalid-coercions.json").read_text(encoding="utf-8")
     )
+    valid_delivery_ids = json.loads(
+        (fixtures / "pr-job-envelope.valid-delivery-ids.json").read_text(encoding="utf-8")
+    )
 
     ReviewJobEnvelope.model_validate(valid)
+    for delivery_id in valid_delivery_ids:
+        candidate = copy.deepcopy(valid)
+        candidate["delivery_id"] = delivery_id
+        ReviewJobEnvelope.model_validate(candidate)
     with pytest.raises(ValidationError):
         ReviewJobEnvelope.model_validate(invalid)
     for case in invalid_coercions:

@@ -103,9 +103,7 @@ class Settings(BaseSettings):
     llm_max_iterations: int = 15
     # OpenAI-compatible base URL; covers OpenAI, Together, vLLM, etc.
     llm_openai_base_url: str = "https://api.openai.com/v1"
-    # API key for the OpenAI-compatible provider. Optional locally
-    # (Ollama doesn't need it) but mandatory at runtime when
-    # ``llm_provider == openai-compat``.
+    # Optional API key sent as a bearer token when the selected endpoint needs one.
     llm_openai_api_key: str | None = Field(default=None, repr=False)
     # Ollama's local daemon; only consulted when ``llm_provider == ollama``.
     llm_ollama_base_url: str = "http://localhost:11434"
@@ -127,7 +125,10 @@ class Settings(BaseSettings):
     # ── Database ─────────────────────────────────────────────────────────
     # Async SQLAlchemy URL; the checksum migration runner normalizes it at
     # the asyncpg boundary.
-    database_url: str = "postgresql+asyncpg://enten@localhost/enten"
+    database_url: str = Field(
+        default="postgresql+asyncpg://enten@localhost/enten",
+        repr=False,
+    )
 
     # ── Cost guardrail ───────────────────────────────────────────
     # USD per-PR cap enforced by the LLM client.

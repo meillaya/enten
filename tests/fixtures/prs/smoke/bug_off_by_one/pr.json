@@ -1,8 +1,8 @@
 {
   "id": 1000000001,
   "number": 1,
-  "title": "Fix off-by-one in list slicing",
-  "body": "The slice upper bound was off by one, dropping the last element when the limit equals the list length.",
+  "title": "Adjust list slicing limit",
+  "body": "Change the slice upper bound used by the top-n helper.",
   "state": "open",
   "head_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
   "base_sha": "feedfacefeedfacefeedfacefeedfacefeedface",

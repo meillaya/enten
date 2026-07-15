@@ -4,6 +4,6 @@
     "severity": "high",
     "file": "src/x.py",
     "line": 42,
-    "message": "Off-by-one error in list slicing excludes the nth element; the patch corrects items[:n-1] to items[:n]."
+    "message": "The new items[:n - 1] slice drops the nth element from the requested result."
   }
 ]

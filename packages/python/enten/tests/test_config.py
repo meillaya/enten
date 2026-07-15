@@ -68,6 +68,7 @@ def test_settings_repr_excludes_secret_values() -> None:
         github_webhook_secret="webhook-value",
         llm_openai_api_key="llm-value",
         embedding_api_key="embedding-value",
+        database_url="postgresql://user:database-password@host/database",
     )
 
     rendered = repr(settings)
@@ -75,6 +76,7 @@ def test_settings_repr_excludes_secret_values() -> None:
     assert "webhook-value" not in rendered
     assert "llm-value" not in rendered
     assert "embedding-value" not in rendered
+    assert "database-password" not in rendered
 
 
 # ── Settings: missing required does not raise ───────────────────────────

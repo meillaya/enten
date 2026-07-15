@@ -35,8 +35,8 @@ class ReviewJobEnvelope(BaseModel):
     installation_id: int = Field(gt=0, strict=True)
     delivery_id: str = Field(
         pattern=(
-            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-"
-            r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+            r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
         )
     )
     repository: EnvelopeRepository

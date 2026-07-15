@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import invalidEnvelope from "../../../../contracts/fixtures/pr-job-envelope.invalid.json" assert { type: "json" };
 import invalidCoercions from "../../../../contracts/fixtures/pr-job-envelope.invalid-coercions.json" assert { type: "json" };
 import validEnvelope from "../../../../contracts/fixtures/pr-job-envelope.valid.json" assert { type: "json" };
+import validDeliveryIds from "../../../../contracts/fixtures/pr-job-envelope.valid-delivery-ids.json" assert { type: "json" };
 import contractSchema from "../../../../contracts/pr-job-envelope.schema.json" assert { type: "json" };
 import { PrJobEnvelopeSchema } from "../src/queue/jobs.js";
 
@@ -52,6 +53,15 @@ describe("cross-language pull request job contract", () => {
 
     // Then
     expect(result.success).toBe(true);
+  });
+
+  it("accepts every shared canonical delivery identifier", () => {
+    const deliveryIds = z.array(z.string()).parse(validDeliveryIds);
+    for (const deliveryId of deliveryIds) {
+      expect(
+        PrJobEnvelopeSchema.safeParse({ ...validEnvelope, delivery_id: deliveryId }).success,
+      ).toBe(true);
+    }
   });
 
   it("rejects the shared invalid fixture", () => {

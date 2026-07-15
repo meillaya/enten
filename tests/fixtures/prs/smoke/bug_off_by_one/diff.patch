@@ -4,5 +4,5 @@
  def top_n(items, n):
      if not items:
          return []
--    return items[:n - 1]
-+    return items[:n]
+-    return items[:n]
++    return items[:n - 1]
