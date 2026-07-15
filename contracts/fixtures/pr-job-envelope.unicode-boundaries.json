@@ -12,5 +12,12 @@
     "unit": "😀",
     "valid_count": 249,
     "invalid_count": 250
+  },
+  {
+    "path": ["tracestate"],
+    "prefix": "",
+    "unit": "😀",
+    "valid_count": 512,
+    "invalid_count": 513
   }
 ]

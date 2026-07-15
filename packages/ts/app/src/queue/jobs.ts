@@ -17,9 +17,9 @@ const TraceparentSchema = z
     /^(?!ff)[0-9a-f]{2}-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$/,
   );
 
-function max255CodePoints(schema: z.ZodString) {
-  return schema.refine((value) => Array.from(value).length <= 255, {
-    message: "must contain at most 255 Unicode code points",
+function maxCodePoints(schema: z.ZodString, maximum: number) {
+  return schema.refine((value) => Array.from(value).length <= maximum, {
+    message: `must contain at most ${maximum} Unicode code points`,
   });
 }
 
@@ -31,7 +31,7 @@ export const PrJobEnvelopeSchema = z
     repository: z
       .object({
         id: z.number().int().positive(),
-        full_name: max255CodePoints(z.string().regex(/^[^/\s]+\/[^/\s]+$/)),
+        full_name: maxCodePoints(z.string().regex(/^[^/\s]+\/[^/\s]+$/), 255),
       })
       .strict(),
     pull_request: z
@@ -44,12 +44,12 @@ export const PrJobEnvelopeSchema = z
     actor: z
       .object({
         id: z.number().int().positive(),
-        login: max255CodePoints(z.string().min(1)),
+        login: maxCodePoints(z.string().min(1), 255),
       })
       .strict(),
     review_contract: z.string().regex(/^[0-9a-f]{64}$/),
     traceparent: TraceparentSchema,
-    tracestate: z.string().min(1).max(512).optional(),
+    tracestate: maxCodePoints(z.string().min(1), 512).optional(),
   })
   .strict();
 
