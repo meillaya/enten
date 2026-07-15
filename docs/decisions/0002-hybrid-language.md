@@ -18,12 +18,12 @@ The system needs a durable review worker, reusable model/tool libraries, webhook
 Split the work along the natural axis:
 
 - **Python** owns the worker, deterministic review pipeline, bounded local generator, and optional model/tool libraries. The production worker does not silently activate an LLM planner; model-backed generation is an explicit library or CLI choice.
-- **TypeScript** owns the network edge — webhook verification, HTTP routing, structured logging, and OpenTelemetry wiring. Hono is the lightest possible HTTP framework on Node 22, and `@octokit/webhooks` is canonical in TypeScript.
+- **TypeScript** owns the network edge — webhook verification, HTTP routing, structured logging, and OpenTelemetry wiring. Hono supplies the repository's small routing surface, while `@octokit/webhooks` provides the existing signature implementation.
 
 ## Consequences
 
 - Two process roles and two toolchains share one production image and one Compose topology.
-- A shared `contracts/` package defines the cross-language schema (event types, telemetry tags) so the two halves do not drift.
+- The `contracts/` directory stores the strict PR job-envelope JSON schema and shared fixtures, including its trace carrier fields, so the two parsers do not drift.
 - We must keep test infrastructure honest across the language boundary.
 - Alternatives considered and rejected:
   - **All Python** (FastAPI at the edge) — `@octokit/webhooks` would have to be re-implemented, creating a second ingress implementation to maintain.
