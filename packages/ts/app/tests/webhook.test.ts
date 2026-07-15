@@ -115,6 +115,7 @@ describe("POST /webhook supported pull requests", () => {
         },
         action,
         actor: { id: 1, login: "octocat" },
+        review_contract: "0".repeat(64),
         traceparent: TRACEPARENT,
         tracestate: TRACESTATE,
       });

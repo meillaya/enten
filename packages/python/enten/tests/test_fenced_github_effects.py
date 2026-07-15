@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import pytest
 
-from enten.github.models import CheckRun, Comment
+from enten.github.models import CheckRun, CheckRunOutput, Comment
 from enten.queue import EffectState
-from enten.reporting.effects import FencedGitHubEffects, IndeterminateGitHubEffectError
+from enten.queue.persistence import JsonValue
+from enten.reporting.effects import (
+    FencedGitHubEffects,
+    GitHubEffects,
+    IndeterminateGitHubEffectError,
+)
+from enten.reporting.payload import comment_marker
 from enten.review.run import ReportPayload
 
 
-def _payload() -> ReportPayload:
+def _payload(head_sha: str = "a" * 40) -> ReportPayload:
     return ReportPayload(
         owner="public",
         repo="repo",
         pr_number=42,
-        head_sha="a" * 40,
+        head_sha=head_sha,
         conclusion="success",
         title="enten review: pass",
         summary="clean",
@@ -23,26 +29,64 @@ def _payload() -> ReportPayload:
 
 class Client:
     calls: list[str]
+    markers: list[str]
 
     def __init__(self) -> None:
         self.calls = []
+        self.markers = []
+        self.comments: dict[str, Comment] = {}
 
-    async def create_check_run(self, *_args: object, **_kwargs: object) -> CheckRun:
+    async def create_check_run(
+        self,
+        owner: str,
+        repo: str,
+        sha: str,
+        conclusion: str,
+        output: CheckRunOutput,
+    ) -> CheckRun:
+        _ = owner, repo, sha, conclusion, output
         self.calls.append("check")
         return CheckRun(id=11, status="completed", conclusion="success")
 
-    async def post_pr_comment(self, *_args: object, **_kwargs: object) -> Comment:
+    async def post_pr_comment(
+        self,
+        owner: str,
+        repo: str,
+        number: int,
+        body: str,
+        marker: str = "<!-- enten-bot -->",
+    ) -> Comment:
+        _ = owner, repo, number, body
         self.calls.append("comment")
-        return Comment(id=22, html_url="https://example.test/comment", body="clean")
+        self.markers.append(marker)
+        existing = self.comments.get(marker)
+        comment_id = existing.id if existing is not None else len(self.comments) + 22
+        comment = Comment(
+            id=comment_id,
+            html_url=f"https://example.test/comments/{comment_id}",
+            body=f"{marker}\n{body}",
+        )
+        self.comments[marker] = comment
+        return comment
 
 
 async def test_fenced_effects_persist_attempt_before_each_post(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     transitions: list[tuple[str, str]] = []
+    prepared_requests: list[JsonValue] = []
 
-    async def prepare(_run: str, key: str, _generation: int, **_kwargs: object):
+    async def prepare(
+        _run: str,
+        key: str,
+        _generation: int,
+        *,
+        marker: str,
+        request: JsonValue,
+    ):
+        _ = marker
         transitions.append((key, "prepared"))
+        prepared_requests.append(request)
         return {"state": EffectState.PREPARED, "external_id": None}
 
     async def attempt(_run: str, key: str, _generation: int) -> bool:
@@ -71,6 +115,25 @@ async def test_fenced_effects_persist_attempt_before_each_post(
     ]
     assert receipt.check_run_id == "11"
     assert receipt.comment_id == "22"
+    expected_marker = comment_marker("a" * 40)
+    assert client.markers == [expected_marker]
+    assert isinstance(prepared_requests[1], dict)
+    assert prepared_requests[1]["marker"] == expected_marker
+
+
+async def test_unfenced_effects_keep_out_of_order_heads_in_distinct_comments() -> None:
+    client = Client()
+    newer = _payload("b" * 40)
+    older = _payload("a" * 40)
+
+    newer_receipt = await GitHubEffects(client).publish(newer)
+    older_receipt = await GitHubEffects(client).publish(older)
+    newer_replay = await GitHubEffects(client).publish(newer)
+
+    assert len(client.comments) == 2
+    assert len(set(client.markers)) == 2
+    assert newer_receipt.comment_id == newer_replay.comment_id
+    assert older_receipt.comment_id != newer_receipt.comment_id
 
 
 async def test_fenced_effects_never_retry_indeterminate_post(

@@ -41,6 +41,7 @@ export const PrJobEnvelopeSchema = z
         login: z.string().min(1),
       })
       .strict(),
+    review_contract: z.string().regex(/^[0-9a-f]{64}$/),
     traceparent: TraceparentSchema,
     tracestate: z.string().min(1).max(512).optional(),
   })
@@ -63,8 +64,19 @@ export function computeIdempotencyKey(envelope: PrJobEnvelope): string {
     envelope.repository.id,
     envelope.pull_request.number,
     envelope.pull_request.head_sha,
+    envelope.review_contract,
   ].join("|");
   return createHash("sha256").update(identity).digest("hex");
+}
+
+const REVIEW_CONTRACT_DOMAIN = "enten-review-contract-v1\0";
+
+export function computeReviewContract(command: string, image: string): string {
+  const payload = JSON.stringify({ command, image });
+  return createHash("sha256")
+    .update(REVIEW_CONTRACT_DOMAIN)
+    .update(payload)
+    .digest("hex");
 }
 
 type PersistedJob = {

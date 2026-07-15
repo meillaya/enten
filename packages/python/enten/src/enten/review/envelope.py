@@ -39,6 +39,7 @@ class ReviewJobEnvelope(BaseModel):
     pull_request: EnvelopePullRequest
     action: Literal["opened", "reopened", "synchronize", "ready_for_review"]
     actor: EnvelopeActor
+    review_contract: str = Field(pattern=r"^[0-9a-f]{64}$")
     traceparent: str = Field(pattern=r"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
     tracestate: str | None = Field(default=None, min_length=1, max_length=512)
 
@@ -55,9 +56,15 @@ class ReviewJobEnvelope(BaseModel):
         *,
         repository_path: Path,
         verification_command: tuple[str, ...] | None = None,
+        expected_review_contract: str | None = None,
         correlation_run_id: str | None = None,
     ) -> ReviewRequest:
         command = verification_command or ("python", "-m", "compileall", "-q", ".")
+        if (
+            expected_review_contract is not None
+            and self.review_contract != expected_review_contract
+        ):
+            raise ValueError("job review contract does not match the worker verifier configuration")
         return ReviewRequest(
             repository_id=str(self.repository.id),
             repository_full_name=self.repository.full_name,
@@ -67,6 +74,7 @@ class ReviewJobEnvelope(BaseModel):
             public_repository=True,
             local_repository=False,
             verification_command=command,
+            review_contract=self.review_contract,
             correlation_run_id=correlation_run_id,
         )
 

@@ -47,7 +47,7 @@ describe("loadConfig", () => {
     // Given
     const environment = {
       GITHUB_APP_ID: "123",
-      GITHUB_WEBHOOK_SECRET: "secret",
+      GITHUB_WEBHOOK_SECRET: "test-webhook-secret-0123456789abcdef",
       DATABASE_URL: "postgresql://db",
     };
 
@@ -83,7 +83,7 @@ describe("start", () => {
     const telemetryShutdown = vi.fn(async () => undefined);
     const config = ConfigSchema.parse({
       GITHUB_APP_ID: "123",
-      GITHUB_WEBHOOK_SECRET: "secret",
+      GITHUB_WEBHOOK_SECRET: "test-webhook-secret-0123456789abcdef",
       DATABASE_URL: "postgresql://unused",
       PORT: "3000",
       METRICS_PORT: "9091",

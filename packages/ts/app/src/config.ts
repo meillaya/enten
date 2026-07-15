@@ -3,11 +3,18 @@ import { z } from "zod";
 export const ConfigSchema = z.object({
   GITHUB_APP_ID: z.string(),
   GITHUB_APP_SLUG: z.string().min(1).default("enten-bot"),
-  GITHUB_WEBHOOK_SECRET: z.string(),
+  GITHUB_WEBHOOK_SECRET: z.string().min(32),
   DATABASE_URL: z.string(),
   PORT: z.string().default("3000"),
   OTEL_ENDPOINT: z.string().default("http://localhost:4317"),
   METRICS_PORT: z.string().default("9091"),
+  SANDBOX_DOCKER_IMAGE: z
+    .string()
+    .min(1)
+    .default(
+      "python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28",
+    ),
+  VERIFICATION_COMMAND: z.string().min(1).default("python -m compileall -q ."),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

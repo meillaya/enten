@@ -1,10 +1,10 @@
 # Dependabot weekly updates for the enten monorepo.
 #
 # Two ecosystems:
-#   * pip — uv-managed Python deps in /packages/python
+#   * pip — uv-managed Python deps in /packages/python/enten
 #           (root pyproject.toml intentionally has no runtime deps,
 #           so Dependabot only needs to watch the member package)
-#   * npm — pnpm-managed TypeScript deps in /packages/ts
+#   * npm — pnpm-managed TypeScript deps from the root workspace
 #           (root package.json has only pnpm + typescript devDeps;
 #           the real deps live in /packages/ts/app)
 #
@@ -16,13 +16,12 @@ version: 2
 updates:
   # ─── pip (uv workspace) ──────────────────────────────────────────────
   - package-ecosystem: "pip"
-    directory: "/packages/python"
+    directory: "/packages/python/enten"
     schedule:
       interval: "weekly"
       day: "monday"
     # Dev updates only — runtime Python deps are bumped by hand
     # because they ripple through the lockfile and uv.lock validation.
-    # T13+ may relax this once we trust the lockfile workflow.
     groups:
       pip-dev:
         dependency-type: "development"
@@ -31,7 +30,7 @@ updates:
 
   # ─── npm (pnpm workspace) ────────────────────────────────────────────
   - package-ecosystem: "npm"
-    directory: "/packages/ts"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"

@@ -118,16 +118,13 @@ async def claim_next(
                 SELECT id
                 FROM jobs
                 WHERE state = 'queued'
-                   OR (
-                       state NOT IN ('done', 'failed')
-                       AND lease_expires_at < now()
-                   )
+                  AND attempts < 3
                 ORDER BY created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             )
             UPDATE jobs AS job
-            SET state = CASE WHEN job.state = 'queued' THEN 'indexing' ELSE job.state END,
+            SET state = 'indexing',
                 claimed_by = $1,
                 claim_generation = job.claim_generation + 1,
                 lease_expires_at = now() + $2::interval,

@@ -31,14 +31,9 @@ ENV_STUBS: dict[str, str] = {
     "LLM_OPENAI_API_KEY": "sk-test-fake-key",
     "LLM_OLLAMA_BASE_URL": "http://localhost:11434",
     "SANDBOX_PROVIDER": "docker",
-    "E2B_API_KEY": "test-e2b-fake",
     "DATABASE_URL": "postgresql+asyncpg://enten@localhost:5432/enten",
     "OTEL_ENDPOINT": "http://localhost:4317",
-    "COMMITTER_EMAIL": "enten-bot@example.com",
-    "PROMETHEUS_METRICS_PORT": "9090",
-    "MAX_PR_DIFF_TOKENS": "50000",
     "PER_PR_COST_CAP_USD": "0.50",
-    "ENVIRONMENT": "test",
 }
 
 

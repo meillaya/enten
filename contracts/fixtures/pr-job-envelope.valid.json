@@ -15,6 +15,7 @@
     "id": 1,
     "login": "octocat"
   },
+  "review_contract": "d8cd300e795765debd5620f2e5bc68ab5fd408722774b6258266eeb55fc91e08",
   "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
   "tracestate": "vendor=value"
 }

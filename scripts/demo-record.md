@@ -1,6 +1,6 @@
 # Demo recording script
 
-This sequence runs the real edge and worker against a disposable public fork. It requires a GitHub App, an externally reachable HTTPS origin that forwards `/webhook` to `127.0.0.1:3000`, and a readable App private key.
+This sequence runs the real edge and worker against a disposable public Python repository. It requires a GitHub App, an externally reachable HTTPS origin that forwards `/webhook` to `127.0.0.1:3000`, and a readable App private key.
 
 ## 1. Clone and install
 
@@ -10,22 +10,21 @@ cd enten
 make install
 ```
 
-## 2. Prepare the verifier and GitHub App
+## 2. Prepare the generic verifier and GitHub App
 
 ```bash
 cp .env.example .env
-docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
-export SANDBOX_DOCKER_IMAGE="$(docker image inspect --format '{{.Id}}' enten-verifier-httpie:3.2.4)"
+docker pull python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28
 ```
 
-Replace the example hook origin in `packages/ts/app/github-app.yml` with the public HTTPS origin, create the App from that manifest, and put its real App ID, webhook secret, PEM path, exported immutable verifier image ID, and verifier command in `.env`:
+Replace the example hook origin in `packages/ts/app/github-app.yml` with the public HTTPS origin, create the App from that manifest, and put its real App ID, webhook secret, and PEM path in `.env`. Keep the generic immutable verifier settings:
 
 ```dotenv
-SANDBOX_DOCKER_IMAGE=sha256:<64-hex>
-VERIFICATION_COMMAND=python /opt/verifier/verify.py
+SANDBOX_DOCKER_IMAGE=python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28
+VERIFICATION_COMMAND=python -m compileall -q .
 ```
 
-The mutable build tag is only a local handle for producing the image; the worker rejects tags before Docker client creation.
+The worker rejects mutable image tags before Docker client creation. This command is intentionally only a Python syntax smoke check.
 
 ## 3. Start and probe the complete stack
 
@@ -36,13 +35,15 @@ scripts/healthcheck-all.sh
 
 Narration: "The authenticated TypeScript edge is listening on port 3000 and the Python worker is polling the migrated Postgres queue."
 
-## 4. Fork the target and open a pull request
+## 4. Create or fork a public Python test repository
+
+When the demo account does not own `Meillaya/enten`, it can create a disposable fork:
 
 ```bash
-gh repo fork httpie/cli --clone=false
+gh repo fork Meillaya/enten --clone=false
 ```
 
-Install the App on your public fork, then create or open a non-draft pull request there. Never install the demo App on the upstream repository.
+Otherwise, create a separate public test repository with Python source. Install the App only on the repository you control, then open a non-draft pull request. Do not use the pinned HTTPie verifier image for this path: its offline contract accepts only one exact upstream commit and rejects fork heads.
 
 ## 5. Watch the real processes
 
@@ -50,7 +51,7 @@ Install the App on your public fork, then create or open a non-draft pull reques
 docker compose logs --follow web worker
 ```
 
-Wait for the authenticated enqueue and the worker's claim, verification, reporting, and completion records.
+Wait for the authenticated enqueue and the worker's claim, exact-SHA checkout, syntax verification, reporting, and completion records.
 
 ## 6. Show the result
 
@@ -80,3 +81,5 @@ Narration: "The edge and worker share one causal trace. The default worker makes
 scripts/dev-down.sh
 rm -f /tmp/enten-demo-eval.json
 ```
+
+The offline HTTPie image test is a separate release fixture documented in `docs/demo-repo.md`; it is not part of this credentialed recording path.

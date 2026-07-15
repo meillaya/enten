@@ -42,7 +42,7 @@ help: ## Show this help (default target).
 .PHONY: install
 install: ## [py+ts] Install every workspace's dependencies.
 	@echo ">> uv sync (root + python workspace)"
-	@cd $(ROOT_DIR) && $(UV) sync --project $(PY_DIR) --all-groups --locked
+	@cd $(ROOT_DIR) && $(UV) sync --project $(PY_DIR) --all-groups --extra test --locked
 	@echo ">> pnpm install (root + ts workspace)"
 	@cd $(ROOT_DIR) && $(PNPM) install --frozen-lockfile
 
@@ -52,7 +52,7 @@ test: test-py test-ts ## [py+ts] Run every test suite.
 
 .PHONY: test-py
 test-py: ## [py] Run pytest across the Python workspace.
-	@cd $(ROOT_DIR) && $(UV) run --project $(PY_DIR) pytest \
+	@cd $(ROOT_DIR) && $(UV) run --project $(PY_DIR) --extra test pytest \
 		--junitxml=/tmp/enten-pytest.xml $(PYTEST_PATHS)
 
 .PHONY: test-ts

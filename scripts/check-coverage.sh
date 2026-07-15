@@ -15,7 +15,7 @@ read -r -a PYTEST_PATHS <<< "${ENTEN_PYTEST_PATHS:-tests packages/python/enten/t
 run_python() {
   local junit="$REPORT_DIR/pytest-junit.xml"
   set +e
-  "$UV" run --project packages/python/enten pytest \
+  "$UV" run --project packages/python/enten --extra test pytest \
     --junitxml="$junit" \
     --cov=packages/python/enten/src/enten \
     --cov-branch \
@@ -41,13 +41,49 @@ suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
 tests = sum(int(suite.attrib.get("tests", "0")) for suite in suites)
 failures = sum(int(suite.attrib.get("failures", "0")) for suite in suites)
 errors = sum(int(suite.attrib.get("errors", "0")) for suite in suites)
-if tests == 0 or failures or errors or pytest_exit:
+allowed_skips = {
+    (
+        "tests.test_demo_image",
+        "test_image_metadata_and_runtime_are_minimal",
+        "set ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 for the image contract",
+    ),
+    (
+        "tests.test_demo_image",
+        "test_wrong_sha_or_selector_is_rejected[ENTEN_BASE_SHA-0000000000000000000000000000000000000000]",
+        "set ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 for the image contract",
+    ),
+    (
+        "tests.test_demo_image",
+        "test_wrong_sha_or_selector_is_rejected[ENTEN_TEST_SELECTOR-tests/test_cli.py]",
+        "set ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 for the image contract",
+    ),
+    (
+        "tests.test_demo_image",
+        "test_three_fresh_hardened_networkless_runs_pass_under_budget",
+        "set ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 for the image contract",
+    ),
+}
+skips = []
+for testcase in root.iter("testcase"):
+    skipped = testcase.find("skipped")
+    if skipped is not None:
+        skips.append(
+            (
+                testcase.attrib.get("classname", ""),
+                testcase.attrib.get("name", ""),
+                skipped.attrib.get("message", ""),
+            )
+        )
+unexpected_skips = [skip for skip in skips if skip not in allowed_skips]
+duplicate_skips = len(skips) != len(set(skips))
+if tests == 0 or failures or errors or pytest_exit or unexpected_skips or duplicate_skips:
     print(
-        f"FAIL: pytest exit={pytest_exit} tests={tests} failures={failures} errors={errors}",
+        f"FAIL: pytest exit={pytest_exit} tests={tests} failures={failures} "
+        f"errors={errors} unexpected skip={unexpected_skips} duplicate_skips={duplicate_skips}",
         file=sys.stderr,
     )
     raise SystemExit(1)
-print(f"JUnit gate passed: tests={tests} failures=0 errors=0")
+print(f"JUnit gate passed: tests={tests} failures=0 errors=0 skipped={len(skips)}")
 PY
 }
 

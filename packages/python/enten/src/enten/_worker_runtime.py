@@ -12,6 +12,7 @@ from opentelemetry import trace
 from enten.config import Settings
 from enten.github.client import GitHubClient
 from enten.queue import init_queue
+from enten.review.contract import review_contract_digest
 from enten.review.remote import GitPublicCheckoutValidator, SandboxVerifier
 
 
@@ -30,6 +31,7 @@ class WorkerRuntime:
     remote_verifier: SandboxVerifier
     checkout_validator: GitPublicCheckoutValidator
     verification_command: tuple[str, ...]
+    review_contract: str
 
 
 def configure_worker_observability() -> None:
@@ -68,6 +70,13 @@ def parse_verification_command(settings: Settings) -> tuple[str, ...]:
 async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
     github_client = build_production_github_client(settings)
     verification_command = parse_verification_command(settings)
+    if settings.sandbox_docker_image is None:
+        await github_client.close()
+        raise WorkerConfigurationError("SANDBOX_DOCKER_IMAGE is required by the production worker")
+    review_contract = review_contract_digest(
+        settings.verification_command,
+        settings.sandbox_docker_image,
+    )
     try:
         from enten.sandbox.factory import get_provider
 
@@ -87,6 +96,7 @@ async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
         remote_verifier=remote_verifier,
         checkout_validator=GitPublicCheckoutValidator(),
         verification_command=verification_command,
+        review_contract=review_contract,
     )
 
 

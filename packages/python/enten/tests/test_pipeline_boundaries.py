@@ -6,6 +6,17 @@ from pathlib import Path
 import pytest
 
 
+def test_review_contract_digest_matches_the_shared_edge_contract() -> None:
+    from enten.review.contract import review_contract_digest
+
+    digest = review_contract_digest(
+        "python -m compileall -q .",
+        "python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28",
+    )
+
+    assert digest == "d8cd300e795765debd5620f2e5bc68ab5fd408722774b6258266eeb55fc91e08"
+
+
 def test_job_envelope_parses_exact_contract_shape(tmp_path: Path) -> None:
     from enten.pipeline import ReviewJobEnvelope
 
@@ -22,16 +33,28 @@ def test_job_envelope_parses_exact_contract_shape(tmp_path: Path) -> None:
             },
             "action": "synchronize",
             "actor": {"id": 4, "login": "alice"},
+            "review_contract": "b" * 64,
             "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
         }
     )
 
     # Then
     request = envelope.to_request(repository_path=tmp_path)
-    assert request.key == ("101", 42, "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000")
+    assert request.key == (
+        "101",
+        42,
+        "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000",
+        "b" * 64,
+    )
     assert request.repository_id == "101"
     assert request.repository_full_name == "public/repo"
     assert request.verification_command == ("python", "-m", "compileall", "-q", ".")
+
+    with pytest.raises(ValueError, match="review contract"):
+        envelope.to_request(
+            repository_path=tmp_path,
+            expected_review_contract="c" * 64,
+        )
 
 
 @pytest.mark.parametrize(
@@ -45,6 +68,7 @@ def test_job_envelope_parses_exact_contract_shape(tmp_path: Path) -> None:
         (("pull_request", "head_sha"), "not-a-sha"),
         (("action",), "closed"),
         (("actor", "id"), 0),
+        (("review_contract",), "invalid"),
         (("traceparent",), "invalid"),
     ],
 )
@@ -67,6 +91,7 @@ def test_job_envelope_rejects_values_outside_shared_contract(
         },
         "action": "opened",
         "actor": {"id": 4, "login": "alice"},
+        "review_contract": "b" * 64,
         "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
     }
     invalid = copy.deepcopy(valid)
@@ -150,6 +175,7 @@ async def test_worker_delegates_job_envelope_to_shared_stage_machine(
         },
         "action": "opened",
         "actor": {"id": 4, "login": "alice"},
+        "review_contract": "b" * 64,
         "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
     }
 
@@ -167,7 +193,12 @@ async def test_worker_delegates_job_envelope_to_shared_stage_machine(
     assert len(captured_requests) == 2
     assert len(captured_dependencies) == 1
     request = captured_requests[-1]
-    assert request.key == ("101", 42, "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000")
+    assert request.key == (
+        "101",
+        42,
+        "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000",
+        "b" * 64,
+    )
     assert captured_dependencies[0] is dependencies
 
 

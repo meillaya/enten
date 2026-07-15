@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import shlex
 from decimal import Decimal
 from pathlib import Path
 from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ReviewKey = tuple[str, int, str]
+from enten.review.contract import review_contract_digest
+
+ReviewKey = tuple[str, int, str, str]
 ReviewStage = Literal[
     "created",
     "proposed",
@@ -34,6 +37,7 @@ class ReviewRequest(BaseModel):
     public_repository: bool = True
     local_repository: bool = True
     verification_command: tuple[str, ...] = Field(min_length=1)
+    review_contract: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     correlation_run_id: str | None = Field(default=None, max_length=255)
 
     @model_validator(mode="after")
@@ -44,7 +48,11 @@ class ReviewRequest(BaseModel):
 
     @property
     def key(self) -> ReviewKey:
-        return (self.repository_id, self.pr_number, self.head_sha)
+        contract = self.review_contract or review_contract_digest(
+            shlex.join(self.verification_command),
+            "local-process",
+        )
+        return (self.repository_id, self.pr_number, self.head_sha, contract)
 
 
 class Proposal(BaseModel):

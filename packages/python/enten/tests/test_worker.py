@@ -202,11 +202,87 @@ async def test_clean_stale_jobs_resets_stale_indexing_job(migrated_db: Any) -> N
     assert count == 1
 
     async with migrated_db["pool"].acquire() as conn:
-        row = await conn.fetchrow("SELECT state, last_error FROM jobs WHERE run_id = $1", run_id)
+        row = await conn.fetchrow(
+            """
+            SELECT state, attempts, claimed_by, lease_expires_at, last_error
+            FROM jobs
+            WHERE run_id = $1
+            """,
+            run_id,
+        )
 
     assert row is not None
     assert row["state"] == "queued"
+    assert row["attempts"] == 1
+    assert row["claimed_by"] is None
+    assert row["lease_expires_at"] is None
     assert "stale" in row["last_error"]
+
+
+async def test_repeated_stale_expiries_exhaust_retry_budget_without_starvation(
+    migrated_db: Any,
+) -> None:
+    expired_run_id = await enqueue({"kind": "pr_review", "payload": {}})
+
+    for expected_attempts in range(1, 4):
+        claim = await claim_next(f"crashing-worker-{expected_attempts}")
+        assert claim is not None
+        assert claim["run_id"] == expired_run_id
+        async with migrated_db["pool"].acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE jobs
+                SET lease_expires_at = now() - interval '1 second'
+                WHERE run_id = $1
+                """,
+                expired_run_id,
+            )
+
+        assert await claim_next("bypass-worker") is None
+        assert await clean_stale_jobs() == 1
+
+        async with migrated_db["pool"].acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT state, attempts FROM jobs WHERE run_id = $1",
+                expired_run_id,
+            )
+        assert row is not None
+        assert row["attempts"] == expected_attempts
+        expected_state = "queued" if expected_attempts < 3 else "failed"
+        assert row["state"] == expected_state
+
+    fresh_run_id = await enqueue({"kind": "pr_review", "payload": {}})
+    next_claim = await claim_next("healthy-worker")
+
+    assert next_claim is not None
+    assert next_claim["run_id"] == fresh_run_id
+
+
+async def test_expired_claim_does_not_starve_queued_job(migrated_db: Any) -> None:
+    expired_run_id = await enqueue({"kind": "pr_review", "payload": {}})
+    expired_claim = await claim_next("crashing-worker")
+    assert expired_claim is not None
+    async with migrated_db["pool"].acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at = now() - interval '1 second'
+            WHERE run_id = $1
+            """,
+            expired_run_id,
+        )
+    fresh_run_id = await enqueue({"kind": "pr_review", "payload": {}})
+
+    fresh_claim = await claim_next("healthy-worker")
+
+    assert fresh_claim is not None
+    assert fresh_claim["run_id"] == fresh_run_id
+    assert await mark_state(
+        fresh_run_id,
+        "done",
+        generation=fresh_claim["generation"],
+    )
+    assert await clean_stale_jobs() == 1
 
 
 async def test_clean_stale_jobs_does_not_reclaim_unexpired_lease(migrated_db: Any) -> None:

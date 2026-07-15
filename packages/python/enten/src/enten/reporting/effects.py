@@ -13,6 +13,7 @@ from enten.queue import (
 )
 from enten.queue.persistence import EffectReceipt as LedgerEffectReceipt
 from enten.queue.persistence import JsonValue
+from enten.reporting.payload import comment_marker
 from enten.review.run import EffectReceipt, ReportPayload
 
 
@@ -58,6 +59,7 @@ class GitHubEffects:
             payload.repo,
             payload.pr_number,
             payload.comment,
+            marker=comment_marker(payload.head_sha),
         )
         return EffectReceipt(
             state="posted",
@@ -160,6 +162,7 @@ class FencedGitHubEffects:
             "repo": payload.repo,
             "pr_number": payload.pr_number,
             "body": payload.comment,
+            "marker": comment_marker(payload.head_sha),
         }
         replay_id = await self._begin(key, request)
         if replay_id is not None:
@@ -170,6 +173,7 @@ class FencedGitHubEffects:
                 payload.repo,
                 payload.pr_number,
                 payload.comment,
+                marker=comment_marker(payload.head_sha),
             )
         except Exception as exc:
             await self._indeterminate(key, exc)

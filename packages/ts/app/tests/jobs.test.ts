@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   computeIdempotencyKey,
+  computeReviewContract,
   createJobsQueue,
   EnqueueInvariantError,
   JobsQueue,
@@ -19,6 +20,7 @@ const envelope = PrJobEnvelopeSchema.parse({
   },
   action: "opened",
   actor: { id: 1, login: "octocat" },
+  review_contract: "d8cd300e795765debd5620f2e5bc68ab5fd408722774b6258266eeb55fc91e08",
   traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
   tracestate: "vendor=value",
 });
@@ -37,6 +39,15 @@ describe("PrJobEnvelopeSchema", () => {
 });
 
 describe("computeIdempotencyKey", () => {
+  it("uses the shared canonical verifier contract digest", () => {
+    expect(
+      computeReviewContract(
+        "python -m compileall -q .",
+        "python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28",
+      ),
+    ).toBe(envelope.review_contract);
+  });
+
   it("deduplicates the same repo, PR, and head SHA across deliveries", () => {
     // Given
     const redelivery = {
@@ -80,6 +91,14 @@ describe("computeIdempotencyKey", () => {
 
     // Then
     expect(differentKey).not.toBe(originalKey);
+  });
+
+  it("distinguishes verifier contracts for the same pull request head", () => {
+    const changedContract = { ...envelope, review_contract: "f".repeat(64) };
+
+    expect(computeIdempotencyKey(changedContract)).not.toBe(
+      computeIdempotencyKey(envelope),
+    );
   });
 });
 

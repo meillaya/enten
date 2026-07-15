@@ -51,7 +51,7 @@ Key boundaries:
 
 - **Ingress:** only `pull_request` actions `opened`, `reopened`, `synchronize`, and non-draft `ready_for_review`; unsupported events are acknowledged and ignored.
 - **Repository:** public GitHub repositories only. The worker fetches the exact `refs/pull/<n>/head`, disables credential helpers, validates the canonical origin and head SHA, and removes the temporary checkout.
-- **Persistence:** checksum-verified SQL migrations, generation-CAS queue leases renewed across checkout, verification, and reporting, compare-and-swap stage checkpoints, and durable external-effect states (`prepared`, `attempted`, `succeeded`, `indeterminate`).
+- **Persistence:** checksum-verified SQL migrations, verifier-contract-bound job identity, generation-CAS queue leases renewed across checkout, verification, and reporting, compare-and-swap stage checkpoints, and durable external-effect states (`prepared`, `attempted`, `succeeded`, `indeterminate`).
 - **Verification:** Docker is the only verified backend. Containers use a read-only root filesystem, tmpfs workspace, no network, no capabilities, a non-root user, and bounded CPU, memory, PID, and time limits.
 - **Authority:** the GitHub App can read pull requests and write PR comments/check runs. It cannot write repository contents, Actions, or issues.
 - **Tracing:** the public `traceparent` is discarded. The authenticated edge creates the trusted producer context; the worker verifies and continues that carrier.
@@ -62,13 +62,13 @@ See [the architecture guide](docs/architecture.md), [permission contract](docs/p
 
 - **A verifier should arbitrate.** Model output can propose a finding, test, or patch, but it cannot declare its own work correct.
 - **Crash safety matters at API boundaries.** A timeout after a GitHub POST is ambiguous. Retrying it can duplicate a check or comment, so `enten` records attempts before the network call and stops on ambiguity.
-- **Untrusted PRs need a small boundary.** The release refuses private checkouts, arbitrary webhook commands, host-shell expansion, unsafe paths, symlinks, submodules, secrets, and networked verifier containers.
+- **Untrusted PRs need a small boundary.** The release refuses private checkouts, arbitrary webhook commands, host-shell expansion, unsafe paths, symlinks, submodules, conventional secret-shaped paths, and networked verifier containers. App and model credentials remain in operator services and are not injected into the verifier container.
 - **Quality claims need independent inputs.** Stub findings are separate from expected eval labels; missing predictions, zero collected tests, malformed reports, and unavailable scanners fail closed.
 
 ## How it works
 
-1. The Hono edge validates required headers and content type before reading a size-limited raw body, verifies the SHA-256 HMAC, validates the strict versioned job contract, and atomically enqueues it.
-2. The worker claims a job with a generation and lease, renews that exact generation throughout the claimed-job scope, validates the authenticated trace carrier, and fetches the exact public PR ref into a mode-0700 temporary checkout. A stale generation cannot renew, checkpoint, report, or complete the job.
+1. The Hono edge validates required headers and content type before reading a size-limited raw body, verifies the SHA-256 HMAC, binds the immutable verifier image and command into the strict versioned job identity, and atomically enqueues it.
+2. The worker claims a job with a generation and lease, renews that exact generation throughout the claimed-job scope, rejects a mismatched verifier contract, validates the authenticated trace carrier, and fetches the exact public PR ref into a mode-0700 temporary checkout. A stale generation cannot renew, checkpoint, report, or complete the job.
 3. The shared stage machine discovers bounded source evidence, generates anchored findings, runs the trusted verification command in the selected immutable Docker image, and persists each stage.
 4. The exit-code arbiter emits `pass`, `flaky`, `fail`, or `error`. Findings cannot override that verdict.
 5. A fenced reporter records the check attempt before calling GitHub, persists the receipt, then does the same for the PR comment. Any uncertain outcome becomes terminal `indeterminate` for operator reconciliation.
@@ -89,7 +89,15 @@ This starts loopback-bound Postgres/pgvector and Jaeger without requiring GitHub
 
 1. Replace the example webhook origin in `packages/ts/app/github-app.yml` with the externally reachable HTTPS origin that routes to this edge, then create the GitHub App and install it on a **public test repository**. The manifest contains a valid URL-shaped placeholder, not environment-variable interpolation.
 2. Copy `.env.example` to `.env`; replace `GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, and `GITHUB_APP_PRIVATE_KEY_PATH` with real values.
-3. Select a trusted verifier image and command. The default `python -m compileall -q .` is a syntax smoke check, not a project test suite.
+3. For a credentialed smoke test, keep the generic immutable Python image and syntax-only command from `.env.example`:
+
+```dotenv
+SANDBOX_DOCKER_IMAGE=python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28
+VERIFICATION_COMMAND=python -m compileall -q .
+```
+
+This verifies that the authenticated fetch, sandbox, and reporting path works for a Python repository. It is not a substitute for that repository's test suite.
+
 4. Start the stack:
 
 ```bash
@@ -101,17 +109,19 @@ open http://127.0.0.1:16686
 
 `healthcheck-all.sh` probes the running Compose services, Postgres, and the edge. It does not run the static release suite; use `make check` separately for lint, typecheck, build, coverage, eval, permission, secret, and dependency gates.
 
-For the pinned HTTPie demonstration image:
+### Offline HTTPie verifier fixture
+
+The pinned HTTPie image is an offline release fixture. It accepts only the recorded `httpie/cli` commit, normalized source digest, and pytest selector, so it intentionally rejects fork commits and must not be configured for a credentialed GitHub smoke test.
+
+Run the opt-in integration test against an exact trusted checkout; the test builds its own uniquely tagged image:
 
 ```bash
-docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
-export SANDBOX_DOCKER_IMAGE="$(docker image inspect --format '{{.Id}}' enten-verifier-httpie:3.2.4)"
-# Copy the exported sha256:<64-hex> value into .env. Mutable tags are rejected.
-# SANDBOX_DOCKER_IMAGE=sha256:<64-hex>
-# VERIFICATION_COMMAND=python /opt/verifier/verify.py
+ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 \
+  ENTEN_HTTPIE_SOURCE=/path/to/exact/httpie-checkout \
+  uv run --project packages/python/enten pytest tests/test_demo_image.py -q
 ```
 
-A registry image may instead use `name@sha256:<64-hex>`. The worker validates the immutable reference before creating a Docker client.
+The test verifies the image's immutable source contract and removes its temporary image and containers. See [the demo contract](docs/demo-repo.md) for the pinned commit and tree. Production verifier references must be either `sha256:<64-hex>` image IDs or registry `name@sha256:<64-hex>` references; the worker rejects mutable tags before creating a Docker client.
 
 The self-hosted worker needs access to `/var/run/docker.sock`; `scripts/dev-up.sh` supplies the socket group ID and rejects missing credentials or a non-file private-key path. Treat Docker socket access as host-level authority and dedicate the worker host accordingly.
 

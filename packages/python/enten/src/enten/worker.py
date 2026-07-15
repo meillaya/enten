@@ -71,6 +71,7 @@ async def run_pipeline(
     repository_path: Path | None = None,
     checkout_validator: CheckoutValidator | None = None,
     verification_command: tuple[str, ...] | None = None,
+    expected_review_contract: str | None = None,
 ) -> PipelineResult:
     """Parse one job and delegate all execution to the shared stage machine."""
     checkout = (repository_path or Path(".")).resolve()
@@ -91,6 +92,7 @@ async def run_pipeline(
             repository_path=checkout,
             correlation_run_id=run_id,
             verification_command=verification_command,
+            expected_review_contract=expected_review_contract,
         )
         validator = checkout_validator or FailClosedCheckoutValidator()
         await validator.validate(request)
@@ -111,14 +113,17 @@ async def clean_stale_jobs(threshold_minutes: int = 15) -> int:
     rows = await pool.fetch(
         """
         UPDATE jobs
-        SET state = CASE
-                WHEN attempts < 3 THEN 'queued'
+        SET attempts = LEAST(attempts + 1, 3),
+            state = CASE
+                WHEN attempts + 1 < 3 THEN 'queued'
                 ELSE 'failed'
             END,
             last_error = CASE
-                WHEN attempts < 3 THEN 'stale job reset'
+                WHEN attempts + 1 < 3 THEN 'stale job reset'
                 ELSE 'stale job expired'
             END,
+            claimed_by = NULL,
+            lease_expires_at = NULL,
             updated_at = now()
         WHERE state = ANY($1::text[])
           AND (
@@ -217,6 +222,7 @@ async def main(poll_interval: int = 5) -> None:
                                 repository_path=repository_path,
                                 checkout_validator=runtime.checkout_validator,
                                 verification_command=runtime.verification_command,
+                                expected_review_contract=runtime.review_contract,
                             )
                 logger.info("job_completed", run_id=run_id, worker_id=worker_id)
             except Exception as exc:

@@ -186,7 +186,7 @@ async def _persist(dependencies: PipelineDependencies, run: ReviewRun) -> None:
 
 
 def _review_id(key: ReviewKey) -> str:
-    raw = f"{key[0]}\x00{key[1]}\x00{key[2]}".encode()
+    raw = f"{key[0]}\x00{key[1]}\x00{key[2]}\x00{key[3]}".encode()
     return hashlib.sha256(raw).hexdigest()[:32]
 
 

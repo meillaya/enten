@@ -69,6 +69,44 @@ async def test_pipeline_replay_reuses_completed_key_without_effects(tmp_path: Pa
     assert generator.calls == verifier.calls == effects.calls == 1
 
 
+async def test_pipeline_does_not_replay_a_different_verifier_contract(
+    tmp_path: Path,
+) -> None:
+    from enten.pipeline import InMemoryReviewStore, PipelineDependencies, execute_review
+    from enten.reporting.effects import NoopEffects
+    from enten.review.local import LocalFindingsGenerator, LocalVerifier
+    from enten.review.run import ReviewRequest
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    store = InMemoryReviewStore()
+    dependencies = PipelineDependencies(
+        store=store,
+        generator=LocalFindingsGenerator(),
+        verifier=LocalVerifier(),
+        effects=NoopEffects(),
+    )
+    passing = ReviewRequest(
+        repository_id="local/repo",
+        pr_number=0,
+        head_sha="a" * 40,
+        repository_path=repository,
+        verification_command=("python", "-c", "raise SystemExit(0)"),
+    )
+    failing = passing.model_copy(
+        update={"verification_command": ("python", "-c", "raise SystemExit(1)")}
+    )
+
+    first = await execute_review(passing, dependencies)
+    second = await execute_review(failing, dependencies)
+
+    assert first.run.verification is not None
+    assert first.run.verification.verdict == "pass"
+    assert second.replayed is False
+    assert second.run.verification is not None
+    assert second.run.verification.verdict == "fail"
+
+
 async def test_pipeline_does_not_retry_ambiguous_external_effect(tmp_path: Path) -> None:
     from enten.pipeline import (
         IndeterminateEffectError,

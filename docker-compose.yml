@@ -4,8 +4,8 @@ x-app-environment: &app-environment
   DATABASE_URL: postgresql+asyncpg://enten:enten@postgres:5432/enten
   GITHUB_APP_ID: "${GITHUB_APP_ID:-1}"
   GITHUB_APP_SLUG: "${GITHUB_APP_SLUG:-enten-bot}"
-  GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET:-local-development-only}"
-  SANDBOX_DOCKER_IMAGE: "${SANDBOX_DOCKER_IMAGE:-}"
+  GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET:-local-development-placeholder-change-me}"
+  SANDBOX_DOCKER_IMAGE: "${SANDBOX_DOCKER_IMAGE:-python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28}"
   VERIFICATION_COMMAND: "${VERIFICATION_COMMAND:-python -m compileall -q .}"
   OTEL_ENDPOINT: http://jaeger:4317
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317

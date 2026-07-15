@@ -45,7 +45,7 @@ if missing:
     raise SystemExit("dev-up: missing worker configuration: " + ", ".join(missing))
 if environment["GITHUB_APP_ID"] == "1":
     raise SystemExit("dev-up: replace the placeholder GITHUB_APP_ID")
-if environment["GITHUB_WEBHOOK_SECRET"] == "local-development-only":
+if environment["GITHUB_WEBHOOK_SECRET"] == "local-development-placeholder-change-me":
     raise SystemExit("dev-up: replace the placeholder GITHUB_WEBHOOK_SECRET")
 key_mount = next(
     volume for volume in worker["volumes"]

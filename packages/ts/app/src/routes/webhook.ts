@@ -46,6 +46,7 @@ export interface WebhookRouteOptions {
   readonly botSlug?: string;
   readonly queue: JobEnqueuer;
   readonly tracing: RequestTracing;
+  readonly reviewContract: string;
   readonly maxWebhookBytes?: number;
   readonly verifySignature?: (
     body: string,
@@ -164,6 +165,7 @@ export function createWebhookHandler(options: WebhookRouteOptions) {
                   id: parsedEvent.data.sender.id,
                   login: parsedEvent.data.sender.login,
                 },
+                review_contract: options.reviewContract,
                 traceparent: produced.traceparent,
                 ...(produced.tracestate === undefined
                   ? {}

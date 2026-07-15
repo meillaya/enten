@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { parse, type Config } from "./config.js";
 import { createLogger } from "./logging.js";
 import {
+  computeReviewContract,
   createJobsQueue,
   type JobEnqueuer,
 } from "./queue/jobs.js";
@@ -24,6 +25,7 @@ export interface CreateAppOptions {
   readonly queue?: JobEnqueuer;
   readonly tracing?: RequestTracing;
   readonly maxWebhookBytes?: number;
+  readonly reviewContract?: string;
   readonly verifySignature?: (
     body: string,
     signature: string,
@@ -73,6 +75,7 @@ export function createApp(options: CreateAppOptions): CreatedApp {
       botSlug: options.botSlug ?? "enten-bot",
       queue,
       tracing,
+      reviewContract: options.reviewContract ?? "0".repeat(64),
       maxWebhookBytes: options.maxWebhookBytes ?? 1024 * 1024,
       ...(options.verifySignature === undefined
         ? {}
@@ -125,6 +128,10 @@ export async function start(options: StartOptions = {}): Promise<Runtime> {
     secret: config.GITHUB_WEBHOOK_SECRET,
     botSlug: config.GITHUB_APP_SLUG,
     databaseUrl: config.DATABASE_URL,
+    reviewContract: computeReviewContract(
+      config.VERIFICATION_COMMAND,
+      config.SANDBOX_DOCKER_IMAGE,
+    ),
   });
   const listen = options.serve ?? serve;
   const webhookPort = Number(config.PORT);

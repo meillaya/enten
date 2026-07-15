@@ -12,6 +12,7 @@
     "pull_request",
     "action",
     "actor",
+    "review_contract",
     "traceparent"
   ],
   "properties": {
@@ -47,6 +48,10 @@
         "id": { "type": "integer", "minimum": 1 },
         "login": { "type": "string", "minLength": 1 }
       }
+    },
+    "review_contract": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     },
     "traceparent": {
       "type": "string",

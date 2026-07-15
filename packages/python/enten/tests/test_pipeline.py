@@ -29,7 +29,7 @@ async def test_pipeline_persists_before_generation_and_records_all_stages(
 
         async def generate(self, proposal: object) -> GeneratedFindings:
             self.calls += 1
-            assert await store.get_by_key(("local/repo", 7, "abc123")) is not None
+            assert await store.get_by_key(request.key) is not None
             return GeneratedFindings(
                 findings=(
                     Finding(
@@ -244,7 +244,7 @@ async def test_pipeline_persists_and_reports_verifier_infrastructure_error(
 
 
 def test_report_payload_sanitizes_hostile_anchored_filename(tmp_path: Path) -> None:
-    from enten.reporting.payload import build_report
+    from enten.reporting.payload import build_report, comment_marker
     from enten.review.run import (
         Finding,
         GeneratedFindings,
@@ -290,6 +290,8 @@ def test_report_payload_sanitizes_hostile_anchored_filename(tmp_path: Path) -> N
 
     payload = build_report(run)
 
+    assert comment_marker(request.head_sha) in payload.comment
+    assert f"Reviewed commit: `{request.head_sha}`" in payload.comment
     assert hostile not in payload.comment
     assert "@octocat" not in payload.comment
     assert "\x00" not in payload.comment

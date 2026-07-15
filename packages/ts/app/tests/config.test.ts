@@ -10,7 +10,7 @@ import { ConfigSchema, parse, type Config } from "../src/config.js";
 
 const VALID_ENV: Record<string, string> = {
   GITHUB_APP_ID: "123456",
-  GITHUB_WEBHOOK_SECRET: "topsecret",
+  GITHUB_WEBHOOK_SECRET: "test-webhook-secret-0123456789abcdef",
   DATABASE_URL: "postgresql://enten:enten@localhost/enten",
 };
 
@@ -20,7 +20,9 @@ describe("config.parse", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.GITHUB_APP_ID).toBe("123456");
-      expect(result.value.GITHUB_WEBHOOK_SECRET).toBe("topsecret");
+      expect(result.value.GITHUB_WEBHOOK_SECRET).toBe(
+        "test-webhook-secret-0123456789abcdef",
+      );
       expect(result.value.DATABASE_URL).toBe(
         "postgresql://enten:enten@localhost/enten",
       );
@@ -36,6 +38,23 @@ describe("config.parse", () => {
     }
   });
 
+  it("rejects a webhook secret shorter than 32 characters", () => {
+    // Given
+    const environment = {
+      ...VALID_ENV,
+      GITHUB_WEBHOOK_SECRET: "too-short",
+    };
+
+    // When
+    const result = parse(environment);
+
+    // Then
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("GITHUB_WEBHOOK_SECRET");
+    }
+  });
+
   it("applies the documented defaults for optional fields", () => {
     const result = parse(VALID_ENV);
     expect(result.ok).toBe(true);
@@ -44,6 +63,12 @@ describe("config.parse", () => {
       expect(result.value.OTEL_ENDPOINT).toBe("http://localhost:4317");
       expect(result.value.METRICS_PORT).toBe("9091");
       expect(result.value.GITHUB_APP_SLUG).toBe("enten-bot");
+      expect(result.value.SANDBOX_DOCKER_IMAGE).toBe(
+        "python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28",
+      );
+      expect(result.value.VERIFICATION_COMMAND).toBe(
+        "python -m compileall -q .",
+      );
     }
   });
 

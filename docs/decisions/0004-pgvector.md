@@ -15,7 +15,7 @@ The retrieval pipeline needs to store and search code embeddings. Dedicated vect
 
 ## Decision
 
-Use the `pgvector` Postgres extension. Embeddings live in the same database as the job queue and review records, in a `vec.chunks` table with a `vector()` column and an IVFFlat index.
+Use the `pgvector` Postgres extension. Embeddings live in the same database as the job queue and review records, in a `vec.chunks` table with a `vector(1024)` column. Approximate cosine search uses an HNSW index with `m = 16` and `ef_construction = 64`.
 
 ## Consequences
 

@@ -6,7 +6,7 @@ export default defineConfig({
     environment: "node",
     env: {
       GITHUB_APP_ID: "123456",
-      GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
+      GITHUB_WEBHOOK_SECRET: "test-webhook-secret-0123456789abcdef",
       DATABASE_URL: "postgresql://enten:enten@localhost:5433/enten",
     },
     include: ["tests/**/*.test.ts"],

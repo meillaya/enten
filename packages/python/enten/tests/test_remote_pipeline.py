@@ -349,6 +349,7 @@ async def test_worker_remote_job_fails_closed_without_checkout_validation(tmp_pa
         },
         "action": "opened",
         "actor": {"id": 4, "login": "alice"},
+        "review_contract": "b" * 64,
         "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
     }
 

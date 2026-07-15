@@ -26,6 +26,8 @@ from enten.queue import (
     renew_lease,
     save_review_checkpoint,
 )
+from enten.queue.persistence import JsonValue
+from enten.worker import clean_stale_jobs
 
 MIGRATIONS = Path(__file__).resolve().parents[4] / "migrations"
 
@@ -84,6 +86,8 @@ async def test_expired_lease_reclaim_invalidates_stale_generation(durable_queue:
             run_id,
         )
 
+    assert await claim_next("worker-b") is None
+    assert await clean_stale_jobs() == 1
     second = await claim_next("worker-b")
     assert second is not None
     assert second["generation"] == first["generation"] + 1
@@ -212,6 +216,7 @@ async def test_load_latest_checkpoint_prefers_generation_then_stage(durable_queu
             "UPDATE jobs SET lease_expires_at = now() - interval '1 second' WHERE run_id = $1",
             run_id,
         )
+    assert await clean_stale_jobs() == 1
     reclaimed = await claim_next("worker-checkpoint-retry")
     assert reclaimed is not None
     assert await save_review_checkpoint(
@@ -322,7 +327,7 @@ async def test_prepared_effect_is_refenced_to_reclaimed_generation(
     run_id = await enqueue({"kind": "pr_review", "payload": {}})
     first = await claim_next("worker-a", lease_duration=timedelta(seconds=30))
     assert first is not None
-    request = {"body_hash": "abc"}
+    request: JsonValue = {"body_hash": "abc"}
     prepared = await prepare_effect(
         run_id,
         "github-comment",
@@ -336,6 +341,7 @@ async def test_prepared_effect_is_refenced_to_reclaimed_generation(
             "UPDATE jobs SET lease_expires_at = now() - interval '1 second' WHERE run_id = $1",
             run_id,
         )
+    assert await clean_stale_jobs() == 1
     reclaimed = await claim_next("worker-b")
     assert reclaimed is not None
 
