@@ -13,10 +13,13 @@ import shutil
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Self, cast, final
 from uuid import uuid4
 
 import anyio
+import docker
 import pytest
+from docker.errors import NotFound
 
 from enten.sandbox import SandboxHandle
 from enten.sandbox.docker import DockerExecOutputLimitError, DockerSandbox
@@ -119,6 +122,36 @@ async def test_destroy_removes_container():
         check=True,
     )
     assert ps.stdout.strip() == ""
+
+
+@pytest.mark.asyncio
+async def test_destroy_tolerates_auto_remove_race() -> None:
+    class RaceContainer:
+        @staticmethod
+        def stop(*, timeout: int) -> None:
+            assert timeout == 10
+            raise NotFound("container was already auto-removed")
+
+    class RaceContainers:
+        @staticmethod
+        def get(container_id: str) -> RaceContainer:
+            assert container_id == "already-removed"
+            return RaceContainer()
+
+    @final
+    class RaceClient:
+        containers: RaceContainers = RaceContainers()
+
+    class RaceDockerSandbox(DockerSandbox):
+        @classmethod
+        def with_race_client(cls) -> Self:
+            provider = cls.__new__(cls)
+            provider._client = cast(docker.DockerClient, cast(object, RaceClient()))
+            return provider
+
+    await RaceDockerSandbox.with_race_client().destroy(
+        SandboxHandle(id="already-removed", provider="docker", image="image")
+    )
 
 
 @pytest.mark.asyncio

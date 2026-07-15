@@ -62,6 +62,11 @@ allowed_skips = {
         "test_three_fresh_hardened_networkless_runs_pass_under_budget",
         "set ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 for the image contract",
     ),
+    (
+        "tests.test_devenv",
+        "test_devenv_evaluates",
+        "devenv executable not installed",
+    ),
 }
 skips = []
 for testcase in root.iter("testcase"):

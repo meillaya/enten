@@ -138,7 +138,7 @@ class DockerSandbox:
             client = container.client
             if client is None:
                 raise DockerTransportError("Docker container has no client for exec")
-            api = cast(DockerExecAPI, client.api)
+            api = _docker_exec_api(client.api)
             result = await run_sync(
                 partial(
                     run_exec_stream,
@@ -191,7 +191,10 @@ class DockerSandbox:
                 )
             except NotFound:
                 return
-            await run_sync(partial(container.stop, timeout=10))
+            try:
+                await run_sync(partial(container.stop, timeout=10))
+            except NotFound:
+                return
 
     async def _ensure_image(self) -> None:
         """Pull the configured image if it is not already present locally."""
@@ -216,13 +219,17 @@ def _extract_files(
     container_id = container.id
     if container_id is None:
         raise DockerSandboxCreationError(image=str(container.image))
-    api = cast(DockerExecAPI, client.api)
+    api = _docker_exec_api(client.api)
     extract_files_stream(
         api,
         container_id=container_id,
         files=files,
         workspace=workspace,
     )
+
+
+def _docker_exec_api(value: object) -> DockerExecAPI:
+    return cast(DockerExecAPI, value)
 
 
 __all__ = [

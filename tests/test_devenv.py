@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -23,6 +26,8 @@ def test_devenv_inputs_are_locked() -> None:
 
 
 def test_devenv_evaluates() -> None:
+    if shutil.which("devenv") is None:
+        pytest.skip("devenv executable not installed")
     subprocess.run(
         ["devenv", "test"],
         cwd=ROOT,
