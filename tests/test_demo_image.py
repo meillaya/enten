@@ -48,7 +48,26 @@ def _source_checkout() -> Path:
     source = os.environ.get("ENTEN_HTTPIE_SOURCE")
     if source is None:
         pytest.skip("ENTEN_HTTPIE_SOURCE does not name the trusted checkout")
-    return Path(source).resolve()
+    checkout = Path(source).resolve()
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=checkout,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=checkout,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if revision.returncode != 0 or revision.stdout.strip() != REVISION:
+        pytest.fail(f"ENTEN_HTTPIE_SOURCE must be checkout {REVISION}")
+    if tree.returncode != 0 or tree.stdout.strip() != TREE:
+        pytest.fail(f"ENTEN_HTTPIE_SOURCE must have tree {TREE}")
+    return checkout
 
 
 def _request(source: Path) -> ReviewRequest:

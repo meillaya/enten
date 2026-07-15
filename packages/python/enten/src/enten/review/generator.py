@@ -9,9 +9,10 @@ retrieved code chunks, then asks an LLM to submit findings via the
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import ClassVar, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from enten.llm.client import AgentLoopSpec
 from enten.llm.injection import wrap_untrusted
@@ -22,13 +23,13 @@ from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse
 class FindingSummary(BaseModel):
     """A single structured finding returned by the review agent."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     category: str
     severity: str
     message: str
-    file: str
-    line: int
+    file: str = Field(min_length=1)
+    line: int = Field(gt=0)
 
 
 class ReviewDraft(BaseModel):
@@ -98,6 +99,18 @@ def _pr_data(pr: Mapping[str, object] | object) -> dict[str, object]:
     }
 
 
+def _finding_exists(finding: FindingSummary, root: Path) -> bool:
+    try:
+        candidate = (root / finding.file).resolve(strict=True)
+        candidate.relative_to(root)
+        if not candidate.is_file():
+            return False
+        with candidate.open(encoding="utf-8") as source:
+            return any(number == finding.line for number, _line in enumerate(source, start=1))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+
+
 async def generate_review(
     pr: Mapping[str, object] | object,
     retrieved_chunks: list[str],
@@ -116,7 +129,7 @@ async def generate_review(
     Returns:
         A :class:`ReviewDraft` populated from the LLM's tool call.
     """
-    _ = sandbox_path
+    source_root = Path(sandbox_path).resolve(strict=True)
     data = _pr_data(pr)
     number = int(cast(int, data["number"]))
     title = str(data.get("title", ""))
@@ -144,7 +157,9 @@ async def generate_review(
             return f"unknown tool: {tool.name}"
         submitted = cast(list[object], tool.arguments.get("findings", []))
         for raw in submitted:
-            findings.append(FindingSummary.model_validate(raw))
+            finding = FindingSummary.model_validate(raw)
+            if _finding_exists(finding, source_root):
+                findings.append(finding)
         return "submitted"
 
     agent_loop = AgentLoopSpec(

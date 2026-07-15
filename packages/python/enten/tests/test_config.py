@@ -63,6 +63,20 @@ def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
     assert s.per_pr_cost_cap_usd == 0.50
 
 
+def test_settings_repr_excludes_secret_values() -> None:
+    settings = Settings(
+        github_webhook_secret="webhook-value",
+        llm_openai_api_key="llm-value",
+        embedding_api_key="embedding-value",
+    )
+
+    rendered = repr(settings)
+
+    assert "webhook-value" not in rendered
+    assert "llm-value" not in rendered
+    assert "embedding-value" not in rendered
+
+
 # ── Settings: missing required does not raise ───────────────────────────
 def test_settings_tolerates_missing_required_field() -> None:
     """A 'required' field like ``GITHUB_APP_ID`` left unset yields ``None``,

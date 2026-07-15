@@ -17,6 +17,7 @@ from typing import Any, ClassVar, Literal, Protocol, cast
 from pydantic import BaseModel, ConfigDict
 
 from enten.llm.client import AgentLoopSpec
+from enten.llm.injection import wrap_untrusted
 from enten.llm.prompts import load_prompt, render
 from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse
 from enten.parsers.models import PytestResult, VitestResult
@@ -130,8 +131,13 @@ async def generate_tests(
     draft = ReviewDraft(content=review_draft) if isinstance(review_draft, str) else review_draft
 
     prompt = load_prompt("test_gen", version=1)
+    base_prompt = load_prompt("system_base", version=1)
     code = _build_code(draft, retrieved_chunks)
-    system, user = render(prompt, {"code": code, "language": language})
+    _prompt_system, user = render(
+        prompt,
+        {"code": wrap_untrusted(code, "code"), "language": language},
+    )
+    system = f"{base_prompt.system.strip()}\n\n{prompt.system.strip()}"
 
     collected: list[GeneratedTest] = []
 

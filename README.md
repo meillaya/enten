@@ -67,7 +67,7 @@ See [the architecture guide](docs/architecture.md), [permission contract](docs/p
 
 ## How it works
 
-1. The Hono edge validates required headers and content type before reading a size-limited raw body, verifies the SHA-256 HMAC, binds the immutable verifier image and command into the strict versioned job identity, and atomically enqueues it.
+1. The Hono edge validates the signature header and content type before reading a size-limited raw body, verifies the SHA-256 HMAC, then validates event and delivery headers, binds the immutable verifier image and command into the strict versioned job identity, and atomically enqueues it.
 2. The worker claims a job with a generation and lease, renews that exact generation throughout the claimed-job scope, rejects a mismatched verifier contract, validates the authenticated trace carrier, and fetches the exact public PR ref into a mode-0700 temporary checkout. A stale generation cannot renew, checkpoint, report, or complete the job.
 3. The shared stage machine discovers bounded source evidence, generates anchored findings, runs the trusted verification command in the selected immutable Docker image, and persists each stage.
 4. The exit-code arbiter emits `pass`, `flaky`, `fail`, or `error`. Findings cannot override that verdict.

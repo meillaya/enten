@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from enten.llm.client import AgentLoopSpec, CostCapExceeded
@@ -71,8 +73,14 @@ def _submit_review_tool(findings: list[dict[str, object]]) -> ToolUse:
     )
 
 
+def _write_source(root: Path, relative: str, line_count: int) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(f"line {number}\n" for number in range(1, line_count + 1)))
+
+
 @pytest.mark.asyncio
-async def test_generate_review_populates_review_draft() -> None:
+async def test_generate_review_populates_review_draft(tmp_path: Path) -> None:
     """A synthetic PR + retrieved chunks yields a populated ReviewDraft."""
     finding: dict[str, object] = {
         "category": "bug",
@@ -82,11 +90,12 @@ async def test_generate_review_populates_review_draft() -> None:
         "line": 42,
     }
     client = FakeLLMClient([_submit_review_tool([finding])])
+    _write_source(tmp_path, "src/core.py", 42)
 
     draft = await generate_review(
         _sample_pr(),
         retrieved_chunks=["def compute(x):\n    return x.value"],
-        sandbox_path="/tmp/sandbox",
+        sandbox_path=str(tmp_path),
         llm_client=client,
     )
 
@@ -101,7 +110,7 @@ async def test_generate_review_populates_review_draft() -> None:
 
 
 @pytest.mark.asyncio
-async def test_user_message_wraps_untrusted_content() -> None:
+async def test_user_message_wraps_untrusted_content(tmp_path: Path) -> None:
     """The user prompt wraps the diff, title, body, and chunks in untrusted tags."""
     finding: dict[str, object] = {
         "category": "style",
@@ -111,11 +120,12 @@ async def test_user_message_wraps_untrusted_content() -> None:
         "line": 1,
     }
     client = FakeLLMClient([_submit_review_tool([finding])])
+    _write_source(tmp_path, "src/core.py", 1)
 
     _ = await generate_review(
         _sample_pr(diff="+ def foo():\n+     pass"),
         retrieved_chunks=["chunk-a"],
-        sandbox_path="/tmp/sandbox",
+        sandbox_path=str(tmp_path),
         llm_client=client,
     )
 
@@ -136,7 +146,7 @@ async def test_user_message_wraps_untrusted_content() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cost_cap_exceeded_bubbles_up() -> None:
+async def test_cost_cap_exceeded_bubbles_up(tmp_path: Path) -> None:
     """When the LLM client hits the per-PR cost cap, the exception propagates."""
     client = FakeLLMClient([], exception=CostCapExceeded("per-PR cost cap reached"))
 
@@ -144,13 +154,13 @@ async def test_cost_cap_exceeded_bubbles_up() -> None:
         _ = await generate_review(
             _sample_pr(),
             retrieved_chunks=[],
-            sandbox_path="/tmp/sandbox",
+            sandbox_path=str(tmp_path),
             llm_client=client,
         )
 
 
 @pytest.mark.asyncio
-async def test_unknown_tool_is_ignored() -> None:
+async def test_unknown_tool_is_ignored(tmp_path: Path) -> None:
     """A non-submit_review tool call is rejected by the agent loop executor."""
     finding: dict[str, object] = {
         "category": "bug",
@@ -165,13 +175,59 @@ async def test_unknown_tool_is_ignored() -> None:
             _submit_review_tool([finding]),
         ]
     )
+    _write_source(tmp_path, "src/loop.py", 7)
 
     draft = await generate_review(
         _sample_pr(),
         retrieved_chunks=[],
-        sandbox_path="/tmp/sandbox",
+        sandbox_path=str(tmp_path),
         llm_client=client,
     )
 
     assert len(draft.findings) == 1
     assert draft.findings[0].file == "src/loop.py"
+
+
+@pytest.mark.asyncio
+async def test_generate_review_suppresses_unverifiable_findings(tmp_path: Path) -> None:
+    _write_source(tmp_path, "src/core.py", 2)
+    client = FakeLLMClient(
+        [
+            _submit_review_tool(
+                [
+                    {
+                        "category": "bug",
+                        "severity": "high",
+                        "message": "missing file",
+                        "file": "src/missing.py",
+                        "line": 1,
+                    },
+                    {
+                        "category": "bug",
+                        "severity": "high",
+                        "message": "line outside file",
+                        "file": "src/core.py",
+                        "line": 3,
+                    },
+                    {
+                        "category": "bug",
+                        "severity": "high",
+                        "message": "verified",
+                        "file": "src/core.py",
+                        "line": 2,
+                    },
+                ]
+            )
+        ]
+    )
+
+    draft = await generate_review(
+        _sample_pr(),
+        retrieved_chunks=[],
+        sandbox_path=str(tmp_path),
+        llm_client=client,
+    )
+
+    assert [(finding.file, finding.line) for finding in draft.findings] == [
+        ("src/core.py", 2)
+    ]

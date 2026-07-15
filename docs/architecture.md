@@ -22,13 +22,13 @@ external_effects: prepare → attempted → succeeded | indeterminate
 GitHub Check Run, then PR comment
 ```
 
-The web and metrics listeners are separate. The TypeScript process starts OpenTelemetry before runtime imports and closes listeners, Postgres, and OTel on shutdown. The Python worker has a separate process role and finishes its current claim before shutdown.
+The web and metrics listeners are separate. The TypeScript process starts OpenTelemetry before constructing its apps and listeners, and closes listeners, Postgres, and OTel on shutdown. The Python worker has a separate process role and finishes its current claim before shutdown.
 
 ## Trust boundaries
 
 ### Webhook edge
 
-The handler validates required headers and `application/json` before reading the request, enforces the body limit, verifies the raw-body HMAC once, and then parses the payload. Only these events create work:
+The handler validates the signature header and `application/json` before reading the request, enforces the body limit, verifies the raw-body HMAC once, and then validates the event and delivery headers before enqueueing. Only these events create work:
 
 - `pull_request.opened`
 - `pull_request.reopened`
@@ -93,7 +93,7 @@ Reports may describe findings, but findings cannot change this result.
 
 ## Observability
 
-The causal trace includes edge receive/authenticate/enqueue, worker consume, and pipeline reserve/propose/findings/verify/persist/report spans. The worker rejects a missing, malformed, or trace-ID-mismatched carrier before pipeline execution. Both processes export traces to the local OTLP target; the TypeScript edge alone serves the bounded Prometheus metrics endpoint on `METRICS_PORT`.
+The causal trace includes a `POST /webhook` server span containing authentication, a `jobs enqueue` producer span, worker consume, and pipeline reserve/propose/findings/verify/persist/report spans. The worker rejects a missing, malformed, or trace-ID-mismatched carrier before pipeline execution. Both processes export traces to the local OTLP target; the TypeScript edge alone serves the bounded Prometheus metrics endpoint on `METRICS_PORT`.
 
 ## Release topology
 

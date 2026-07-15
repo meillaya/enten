@@ -105,7 +105,7 @@ Do not remove unrelated Testcontainers sessions, k3d containers, images, caches,
 
 A job with a missing, malformed, or mismatched authenticated carrier fails before pipeline execution. Compare the stored `jobs.trace_id`, payload `traceparent`, edge enqueue span, and worker consume span. Public inbound trace headers should never be the root of the trusted trace.
 
-Jaeger is available at `http://127.0.0.1:16686` in Compose. A complete review has edge receive/auth/enqueue, worker consume, and reserve/propose/findings/verify/persist/report pipeline spans.
+Jaeger is available at `http://127.0.0.1:16686` in Compose. A complete review has a `POST /webhook` server span containing authentication, a `jobs enqueue` producer span, worker consume, and reserve/propose/findings/verify/persist/report pipeline spans.
 
 ## Cost and model components
 

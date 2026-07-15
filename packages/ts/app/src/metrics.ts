@@ -1,10 +1,9 @@
 /**
  * Prometheus metrics exposition for the @enten/app TypeScript edge.
  *
- * Mirrors the Python surface in `packages/python/enten/src/enten/metrics.py`
- * so that both halves of the monorepo expose the same counters and labels.
- * The router is mounted on `/metrics` and returns the default registry in
- * Prometheus text format.
+ * The edge is the release's Prometheus exposition surface. The router is
+ * mounted on `/metrics` and returns the default registry in Prometheus text
+ * format.
  */
 
 import { Hono } from "hono";
@@ -38,8 +37,7 @@ export const webhookSignatureFailuresTotal = new Counter({
 /**
  * Increment the `pr_reviews_total` counter for the given result.
  *
- * `result` should be one of `passed`, `failed`, or `errored` so that the
- * TS and Python metrics stay aligned.
+ * `result` should be one of `passed`, `failed`, or `errored`.
  */
 export function recordPrReview(result: string): void {
   prReviewsTotal.inc({ result });

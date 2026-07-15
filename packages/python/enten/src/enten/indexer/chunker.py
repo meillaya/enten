@@ -1,7 +1,7 @@
-"""Language-agnostic AST chunking backed by tree-sitter.
+"""Python and TypeScript/TSX AST chunking backed by tree-sitter.
 
-Supports Python and TypeScript/TSX. Chunks are deterministic: the same
-source bytes always produce the same ``chunk_id``.
+Chunk identities are deterministic over language, source bytes, and byte
+location. The persistence layer adds repository, snapshot, and path identity.
 """
 
 from __future__ import annotations

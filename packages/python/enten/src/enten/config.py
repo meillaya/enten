@@ -1,7 +1,8 @@
 """Typed application configuration for the enten Python core.
 
-This module is the single source of truth for every environment variable
-read by the Python side of the agent. The :class:`Settings` class is a
+This module is the typed source of truth for application settings read by the
+Python worker and library components. Migration-only safety switches remain
+owned by the migration CLI. The :class:`Settings` class is a
 ``pydantic_settings.BaseSettings`` model that:
 
 * loads ``.env`` from the current working directory (override per-instance
@@ -13,10 +14,9 @@ read by the Python side of the agent. The :class:`Settings` class is a
 * raises ``ValidationError`` on a bad type rather than accepting malformed
   values silently.
 
-The constructor is intentionally logging-free. Secret values are *never*
-printed, echoed, or written to ``Settings.__repr__``; redaction is the
-responsibility of the structlog / pino processor chain defined in
-:mod:`enten.redaction`, which is invoked at log-time, not at init-time.
+The constructor is intentionally logging-free. Secret fields are excluded from
+``Settings.__repr__``. Callers that serialize settings must still use the
+structlog / pino redaction processors defined in :mod:`enten.redaction`.
 
 Usage::
 
@@ -28,8 +28,8 @@ Usage::
     # For tests, point at a temp file:
     s = Settings(_env_file="/tmp/test.env")
 
-Adding a new env var? Add a field here with a default, then add the same
-name to ``.env.example`` at the repo root.
+Adding a new application setting? Add a field here with a default, then add the
+same name to ``.env.example`` at the repo root.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -94,7 +95,7 @@ class Settings(BaseSettings):
     # "Private keys" page. We never inline the key in env vars.
     github_app_private_key_path: Path | None = None
     # Shared secret used to validate ``X-Hub-Signature-256`` on inbound webhooks.
-    github_webhook_secret: str | None = None
+    github_webhook_secret: str | None = Field(default=None, repr=False)
     # ── LLM provider ─────────────────────────────────────────────────────
     llm_provider: LLMProvider = LLMProvider.OPENAI_COMPAT
     # Default chat model name sent on every request.
@@ -105,14 +106,14 @@ class Settings(BaseSettings):
     # API key for the OpenAI-compatible provider. Optional locally
     # (Ollama doesn't need it) but mandatory at runtime when
     # ``llm_provider == openai-compat``.
-    llm_openai_api_key: str | None = None
+    llm_openai_api_key: str | None = Field(default=None, repr=False)
     # Ollama's local daemon; only consulted when ``llm_provider == ollama``.
     llm_ollama_base_url: str = "http://localhost:11434"
 
     # ── Embeddings (Py core) ───────────────────────────────────────────────
     embedding_provider: str = "openai-compat"
     embedding_base_url: str | None = None
-    embedding_api_key: str | None = None
+    embedding_api_key: str | None = Field(default=None, repr=False)
     embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1024
     embedding_timeout: float = 30.0
