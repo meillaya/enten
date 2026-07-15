@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
+from typer.core import TyperGroup, TyperOption
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from enten.cli import app
@@ -169,12 +171,25 @@ def test_review_and_cost_help_are_available() -> None:
     runner = CliRunner()
 
     # When
-    review = runner.invoke(app, ["review", "--help"], terminal_width=160)
-    cost = runner.invoke(app, ["cost", "--help"], terminal_width=160)
+    review = runner.invoke(app, ["review", "--help"])
+    cost = runner.invoke(app, ["cost", "--help"])
+    command = get_command(app)
 
     # Then
     assert review.exit_code == 0, review.output
-    assert "--repo" in review.output
-    assert "--verify-command" in review.output
     assert cost.exit_code == 0, cost.output
-    assert "--pr" in cost.output
+    assert isinstance(command, TyperGroup)
+    review_options = {
+        option
+        for parameter in command.commands["review"].params
+        if isinstance(parameter, TyperOption)
+        for option in parameter.opts
+    }
+    cost_options = {
+        option
+        for parameter in command.commands["cost"].params
+        if isinstance(parameter, TyperOption)
+        for option in parameter.opts
+    }
+    assert {"--repo", "--verify-command"} <= review_options
+    assert {"--pr"} <= cost_options
