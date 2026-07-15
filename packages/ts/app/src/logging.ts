@@ -1,29 +1,23 @@
 /**
  * Structured logging configuration for the enten TypeScript edge.
  *
- * The agent emits one JSON line per event via `pino`. The redaction list
- * is the single source of truth for what an enten log line looks like on
- * disk; downstream tooling (Loki, Jaeger log appenders, the typecheck
- * CI step) all match the same redaction pattern as the Python side.
+ * The edge emits one JSON line per event via `pino` and redacts the
+ * explicitly configured secret paths before writing to stdout.
  *
  * Design contract
  * ---------------
  *
  * - One JSON object per `stdout.write`, flushable line-by-line by `tail`.
- * - Bound `run_id` contextvars flow into every subsequent log call of the
- *   same handler invocation; `withRunId` is the convenience wrapper that
- *   binds it for the lifetime of an HTTP request.
- * - Secret-shaped keys are redacted via pino's built-in `redact` array;
- *   the pattern mirrors `packages/python/enten/src/enten/redaction.py`
- *   so a key redacted on one side is redacted on the other.
+ * - `withRunId` explicitly passes a child logger bound to one `run_id`.
+ * - Secret paths in the pino `redact` array are censored at emission.
  *
  * Run ids
  * -------
  *
  * `newRunId()` produces values matching `^pr_[a-z0-9]{12}$`.
- * Twelve lowercase base32 chars carry 60 bits of entropy; mixed with
- * `performance.now()` + `crypto.randomBytes(2)` so collisions over a
- * single process's lifetime are vanishingly unlikely.
+ * The twelve-character suffix encodes hash output derived from a monotonic
+ * clock reading and 16 random bits. IDs are probabilistically collision
+ * resistant rather than guaranteed unique.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -54,8 +48,7 @@ const BASE32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
  * The `level` field is reformatted from pino's numeric default into the
  * string label (`"info"`, `"warn"`, etc.) so log searches across the
  * Python and TypeScript sides share a single keyword. Secrets are
- * redacted at emission time via pino's `redact` array using the same
- * key set as the Python `redaction.py` module.
+ * redacted at emission time via pino's explicit `redact` paths.
  *
  * @param name - The module name recorded on every line as `"module"`.
  *   Conventionally a noun describing what the logger is for, e.g.
@@ -121,7 +114,7 @@ export function withRunId<T>(
 }
 
 /**
- * Return a 16-character run id matching `^pr_[a-z0-9]{12}$`.
+ * Return a 15-character run id matching `^pr_[a-z0-9]{12}$`.
  *
  * Implementation mirrors the Python `enten.logging.new_run_id`:
  *
@@ -129,8 +122,7 @@ export function withRunId<T>(
  *   id   = "pr_" + 12 chars from base32(lowercase(hex(mix)))
  *
  * Performance.now() is monotonic and high-resolution; `randomBytes(2)`
- * provides 16 bits of CSPRNG entropy that guarantee uniqueness over
- * 1000+ consecutive calls even if the monotonic clock is identical.
+ * adds 16 bits of CSPRNG entropy before hashing.
  *
  * The bit-extraction loop walks 15 hex digits (60 bits / 4 bits per
  * hex digit) and packs five bits at a time into one of twelve base32

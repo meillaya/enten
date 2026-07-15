@@ -1,28 +1,41 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from enten.review.run import ReviewRequest
 
 
+def _require_json_number(value: object) -> object:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("value must be a JSON number")
+    return value
+
+
+PositiveJsonInteger = Annotated[
+    int,
+    BeforeValidator(_require_json_number),
+    Field(gt=0),
+]
+
+
 class EnvelopeRepository(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    id: int = Field(gt=0, strict=True)
+    id: PositiveJsonInteger
     full_name: str = Field(pattern=r"^[^/\s]+/[^/\s]+$", max_length=255)
 
 
 class EnvelopePullRequest(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    number: int = Field(gt=0, strict=True)
+    number: PositiveJsonInteger
     head_sha: str = Field(pattern=r"^[0-9a-f]{40,64}$")
 
 
 class EnvelopeActor(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    id: int = Field(gt=0, strict=True)
+    id: PositiveJsonInteger
     login: str = Field(min_length=1, max_length=255)
 
 
@@ -32,7 +45,7 @@ class ReviewJobEnvelope(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     version: Literal["1"]
-    installation_id: int = Field(gt=0, strict=True)
+    installation_id: PositiveJsonInteger
     delivery_id: str = Field(
         pattern=(
             r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -46,6 +59,13 @@ class ReviewJobEnvelope(BaseModel):
     review_contract: str = Field(pattern=r"^[0-9a-f]{64}$")
     traceparent: str = Field(pattern=r"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
     tracestate: str | None = Field(default=None, min_length=1, max_length=512)
+
+    @field_validator("tracestate", mode="before")
+    @classmethod
+    def reject_explicit_null_tracestate(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("tracestate must be omitted rather than null")
+        return value
 
     @field_validator("traceparent")
     @classmethod

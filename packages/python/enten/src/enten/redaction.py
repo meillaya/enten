@@ -1,13 +1,9 @@
 """Secret-aware redaction helpers for the enten Python core.
 
-This module is intentionally tiny and free of third-party imports so it
-can be reused by both the structlog processor chain (T04) and any
-ad-hoc diagnostic printers (CLI ``status`` command, /health JSON, etc.).
-
-The matching pattern is the same one used by the TS pino redaction list
-(see ``packages/ts/app/src/config.ts``) so a key that gets redacted on
-one side is redacted on the other; this matters when we ship OTel
-spans across the language boundary.
+This module is intentionally tiny and free of third-party imports so the
+structlog processor chain and explicit diagnostic serializers can share one
+recursive Python redaction rule. The TypeScript edge separately maintains
+explicit pino paths in ``packages/ts/app/src/logging.ts``.
 
 Pattern source: the plan's T03 deliverable,
 ``(?i)(api_?key|token|secret|private_?key|password|webhook_?_?secret)``.

@@ -1,0 +1,16 @@
+[
+  {
+    "path": ["actor", "login"],
+    "prefix": "",
+    "unit": "😀",
+    "valid_count": 255,
+    "invalid_count": 256
+  },
+  {
+    "path": ["repository", "full_name"],
+    "prefix": "owner/",
+    "unit": "😀",
+    "valid_count": 249,
+    "invalid_count": 250
+  }
+]

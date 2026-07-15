@@ -32,12 +32,39 @@ def test_python_parser_consumes_the_shared_contract_fixtures() -> None:
     valid_delivery_ids = json.loads(
         (fixtures / "pr-job-envelope.valid-delivery-ids.json").read_text(encoding="utf-8")
     )
+    valid_numeric_values = json.loads(
+        (fixtures / "pr-job-envelope.valid-numeric-values.json").read_text(encoding="utf-8")
+    )
+    unicode_boundaries = json.loads(
+        (fixtures / "pr-job-envelope.unicode-boundaries.json").read_text(encoding="utf-8")
+    )
 
     ReviewJobEnvelope.model_validate(valid)
     for delivery_id in valid_delivery_ids:
         candidate = copy.deepcopy(valid)
         candidate["delivery_id"] = delivery_id
         ReviewJobEnvelope.model_validate(candidate)
+    for case in valid_numeric_values:
+        candidate = copy.deepcopy(valid)
+        target = candidate
+        for segment in case["path"][:-1]:
+            target = target[segment]
+        target[case["path"][-1]] = case["value"]
+        ReviewJobEnvelope.model_validate(candidate)
+    for case in unicode_boundaries:
+        valid_text = case["prefix"] + case["unit"] * case["valid_count"]
+        invalid_text = case["prefix"] + case["unit"] * case["invalid_count"]
+        for text, accepted in ((valid_text, True), (invalid_text, False)):
+            candidate = copy.deepcopy(valid)
+            target = candidate
+            for segment in case["path"][:-1]:
+                target = target[segment]
+            target[case["path"][-1]] = text
+            if accepted:
+                ReviewJobEnvelope.model_validate(candidate)
+            else:
+                with pytest.raises(ValidationError):
+                    ReviewJobEnvelope.model_validate(candidate)
     with pytest.raises(ValidationError):
         ReviewJobEnvelope.model_validate(invalid)
     for case in invalid_coercions:

@@ -1,9 +1,8 @@
 """Structured logging configuration for the enten Python core.
 
-The agent emits one JSON line per event to stdout via :mod:`structlog`. The
-processor chain is the single source of truth for what an enten log line
-looks like on disk; downstream tooling (Loki, Jaeger log appenders, the
-``claude-md-management`` reviewer pass) all match the regex below.
+The Python core emits one JSON line per event to stdout via :mod:`structlog`.
+Its processor chain defines timestamping, context binding, and recursive
+secret-key redaction before serialization.
 
 Design contract
 ---------------
@@ -25,10 +24,9 @@ Run ids
 -------
 
 :func:`new_run_id` produces values matching ``^pr_[a-z0-9]{12}$``.
-Twelve base32 chars carry 60 bits of entropy; mixed with
-:func:`time.monotonic_ns` so collisions over a single process's lifetime
-are vanishingly unlikely while still being cheap to generate (one SHA-256
-hash + base32 trim).
+The twelve-character suffix encodes hash output derived from
+:func:`time.monotonic_ns` and 16 random bits. IDs are probabilistically
+collision resistant rather than guaranteed unique.
 """
 
 from __future__ import annotations
@@ -80,16 +78,14 @@ def _redact_processor(
 
 
 def new_run_id() -> str:
-    """Return a 16-character run id matching ``^pr_[a-z0-9]{12}$``.
+    """Return a 15-character run id matching ``^pr_[a-z0-9]{12}$``.
 
     Implementation:
         mix = sha256( f"{monotonic_ns}-{token_hex(2)}" )[:8 bytes]
         id  = "pr_" + base32(mix).lower()[:12]
 
-    The combination gives 60 bits of base32 output (12 chars × 5 bits);
-    :func:`secrets.token_hex` provides 16 bits of cryptographic entropy
-    which guarantees 1000+ consecutive ids are unique without needing a
-    monotonic clock that never repeats.
+    The combination yields a 60-bit encoded hash prefix; the input includes
+    16 cryptographically random bits in addition to the monotonic clock.
     """
     mix = f"{time.monotonic_ns()}-{secrets.token_hex(2)}".encode()
     digest = hashlib.sha256(mix).digest()

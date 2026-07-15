@@ -1,0 +1,6 @@
+[
+  { "path": ["installation_id"], "value": 9.0 },
+  { "path": ["repository", "id"], "value": 101.0 },
+  { "path": ["pull_request", "number"], "value": 42.0 },
+  { "path": ["actor", "id"], "value": 4.0 }
+]

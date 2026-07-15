@@ -5,6 +5,8 @@ import invalidEnvelope from "../../../../contracts/fixtures/pr-job-envelope.inva
 import invalidCoercions from "../../../../contracts/fixtures/pr-job-envelope.invalid-coercions.json" assert { type: "json" };
 import validEnvelope from "../../../../contracts/fixtures/pr-job-envelope.valid.json" assert { type: "json" };
 import validDeliveryIds from "../../../../contracts/fixtures/pr-job-envelope.valid-delivery-ids.json" assert { type: "json" };
+import validNumericValues from "../../../../contracts/fixtures/pr-job-envelope.valid-numeric-values.json" assert { type: "json" };
+import unicodeBoundaries from "../../../../contracts/fixtures/pr-job-envelope.unicode-boundaries.json" assert { type: "json" };
 import contractSchema from "../../../../contracts/pr-job-envelope.schema.json" assert { type: "json" };
 import { PrJobEnvelopeSchema } from "../src/queue/jobs.js";
 
@@ -17,7 +19,21 @@ const jsonSchemaIdentity = z.object({
 const coercionCases = z.array(
   z.object({
     path: z.array(z.string()).min(1),
-    value: z.string(),
+    value: z.unknown(),
+  }),
+);
+
+const numericCases = z.array(
+  z.object({ path: z.array(z.string()).min(1), value: z.number() }),
+);
+
+const unicodeCases = z.array(
+  z.object({
+    path: z.array(z.string()).min(1),
+    prefix: z.string(),
+    unit: z.string(),
+    valid_count: z.number().int().positive(),
+    invalid_count: z.number().int().positive(),
   }),
 );
 
@@ -61,6 +77,30 @@ describe("cross-language pull request job contract", () => {
       expect(
         PrJobEnvelopeSchema.safeParse({ ...validEnvelope, delivery_id: deliveryId }).success,
       ).toBe(true);
+    }
+  });
+
+  it("accepts every shared integral JSON number", () => {
+    for (const testCase of numericCases.parse(validNumericValues)) {
+      const candidate = replaceAtPath(validEnvelope, testCase.path, testCase.value);
+      expect(PrJobEnvelopeSchema.safeParse(candidate).success).toBe(true);
+    }
+  });
+
+  it("counts shared text limits in Unicode code points", () => {
+    for (const testCase of unicodeCases.parse(unicodeBoundaries)) {
+      const validText = testCase.prefix + testCase.unit.repeat(testCase.valid_count);
+      const invalidText = testCase.prefix + testCase.unit.repeat(testCase.invalid_count);
+      expect(
+        PrJobEnvelopeSchema.safeParse(
+          replaceAtPath(validEnvelope, testCase.path, validText),
+        ).success,
+      ).toBe(true);
+      expect(
+        PrJobEnvelopeSchema.safeParse(
+          replaceAtPath(validEnvelope, testCase.path, invalidText),
+        ).success,
+      ).toBe(false);
     }
   });
 
