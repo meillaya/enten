@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import ClassVar, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,7 +33,12 @@ class ReviewJobEnvelope(BaseModel):
 
     version: Literal["1"]
     installation_id: int = Field(gt=0, strict=True)
-    delivery_id: UUID
+    delivery_id: str = Field(
+        pattern=(
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-"
+            r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        )
+    )
     repository: EnvelopeRepository
     pull_request: EnvelopePullRequest
     action: Literal["opened", "reopened", "synchronize", "ready_for_review"]

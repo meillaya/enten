@@ -2,5 +2,9 @@
   { "path": ["installation_id"], "value": "9" },
   { "path": ["repository", "id"], "value": "101" },
   { "path": ["pull_request", "number"], "value": "42" },
-  { "path": ["actor", "id"], "value": "4" }
+  { "path": ["actor", "id"], "value": "4" },
+  {
+    "path": ["delivery_id"],
+    "value": "11111111111141118111111111111111"
+  }
 ]

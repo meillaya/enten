@@ -2,7 +2,7 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 
 import invalidEnvelope from "../../../../contracts/fixtures/pr-job-envelope.invalid.json" assert { type: "json" };
-import invalidNumericTypes from "../../../../contracts/fixtures/pr-job-envelope.invalid-types.json" assert { type: "json" };
+import invalidCoercions from "../../../../contracts/fixtures/pr-job-envelope.invalid-coercions.json" assert { type: "json" };
 import validEnvelope from "../../../../contracts/fixtures/pr-job-envelope.valid.json" assert { type: "json" };
 import contractSchema from "../../../../contracts/pr-job-envelope.schema.json" assert { type: "json" };
 import { PrJobEnvelopeSchema } from "../src/queue/jobs.js";
@@ -13,7 +13,7 @@ const jsonSchemaIdentity = z.object({
   additionalProperties: z.literal(false),
 });
 
-const numericTypeCases = z.array(
+const coercionCases = z.array(
   z.object({
     path: z.array(z.string()).min(1),
     value: z.string(),
@@ -65,8 +65,8 @@ describe("cross-language pull request job contract", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects every shared wrong-type numeric fixture", () => {
-    const cases = numericTypeCases.parse(invalidNumericTypes);
+  it("rejects every shared coercion fixture", () => {
+    const cases = coercionCases.parse(invalidCoercions);
     for (const testCase of cases) {
       const candidate = replaceAtPath(validEnvelope, testCase.path, testCase.value);
       expect(PrJobEnvelopeSchema.safeParse(candidate).success).toBe(false);
