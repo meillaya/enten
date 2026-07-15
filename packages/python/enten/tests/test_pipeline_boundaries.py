@@ -26,10 +26,22 @@ def test_python_parser_consumes_the_shared_contract_fixtures() -> None:
     fixtures = Path(__file__).parents[4] / "contracts" / "fixtures"
     valid = json.loads((fixtures / "pr-job-envelope.valid.json").read_text(encoding="utf-8"))
     invalid = json.loads((fixtures / "pr-job-envelope.invalid.json").read_text(encoding="utf-8"))
+    invalid_types = json.loads(
+        (fixtures / "pr-job-envelope.invalid-types.json").read_text(encoding="utf-8")
+    )
 
     ReviewJobEnvelope.model_validate(valid)
     with pytest.raises(ValidationError):
         ReviewJobEnvelope.model_validate(invalid)
+    for case in invalid_types:
+        candidate = copy.deepcopy(valid)
+        target = candidate
+        path = case["path"]
+        for segment in path[:-1]:
+            target = target[segment]
+        target[path[-1]] = case["value"]
+        with pytest.raises(ValidationError, match="valid integer"):
+            ReviewJobEnvelope.model_validate(candidate)
 
 
 def test_job_envelope_parses_exact_contract_shape(tmp_path: Path) -> None:

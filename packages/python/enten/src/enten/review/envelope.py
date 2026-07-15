@@ -11,19 +11,19 @@ from enten.review.run import ReviewRequest
 
 class EnvelopeRepository(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    id: int = Field(gt=0)
+    id: int = Field(gt=0, strict=True)
     full_name: str = Field(pattern=r"^[^/\s]+/[^/\s]+$", max_length=255)
 
 
 class EnvelopePullRequest(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    number: int = Field(gt=0)
+    number: int = Field(gt=0, strict=True)
     head_sha: str = Field(pattern=r"^[0-9a-f]{40,64}$")
 
 
 class EnvelopeActor(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-    id: int = Field(gt=0)
+    id: int = Field(gt=0, strict=True)
     login: str = Field(min_length=1, max_length=255)
 
 
@@ -33,7 +33,7 @@ class ReviewJobEnvelope(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
     version: Literal["1"]
-    installation_id: int = Field(gt=0)
+    installation_id: int = Field(gt=0, strict=True)
     delivery_id: UUID
     repository: EnvelopeRepository
     pull_request: EnvelopePullRequest
