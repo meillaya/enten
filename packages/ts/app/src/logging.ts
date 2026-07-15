@@ -36,7 +36,7 @@ const BASE32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
  *
  * ```json
  * {
- *   "level": 30,
+ *   "level": "info",
  *   "time": 1735738800000,
  *   "service": "enten-webhook",
  *   "module": "<name>",
@@ -126,8 +126,8 @@ export function withRunId<T>(
  *
  * The bit-extraction loop walks 15 hex digits (60 bits / 4 bits per
  * hex digit) and packs five bits at a time into one of twelve base32
- * characters. The neighbour-byte xor pattern handles bit offsets that
- * straddle two hex digits without a Buffer intermediate.
+ * characters. Adjacent nibbles are shifted and combined when a group
+ * straddles two hex digits.
  */
 export function newRunId(): string {
   // Performance.now() returns a sub-millisecond float; multiplying by

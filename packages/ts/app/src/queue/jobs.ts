@@ -31,7 +31,10 @@ export const PrJobEnvelopeSchema = z
     repository: z
       .object({
         id: z.number().int().positive(),
-        full_name: maxCodePoints(z.string().regex(/^[^/\s]+\/[^/\s]+$/), 255),
+        full_name: maxCodePoints(
+          z.string().regex(/^[^/\s]+\/[^/\s]+$(?![\s\S])/),
+          255,
+        ),
       })
       .strict(),
     pull_request: z

@@ -10,5 +10,9 @@
   {
     "path": ["tracestate"],
     "value": null
+  },
+  {
+    "path": ["repository", "full_name"],
+    "value": "owner/repo\n"
   }
 ]

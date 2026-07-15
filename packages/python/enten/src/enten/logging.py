@@ -55,17 +55,11 @@ __all__ = [
 # from a hash of (monotonic_ns + 16 bits of CSPRNG entropy).
 _RUN_ID_PREFIX = "pr_"
 
-# Module-level level that survives re-imports. ``structlog.configure`` is
-# idempotent, but we still guard against accidental double-init in
-# long-lived test runners.
-_CONFIGURED: bool = False
-
-
 def _redact_processor(
     _logger: Any,
     _method_name: str,
-    event_dict: dict[str, Any],
-) -> dict[str, Any]:
+    event_dict: structlog.types.EventDict,
+) -> structlog.types.EventDict:
     """structlog processor that redacts secret-shaped fields at log time.
 
     Wraps :func:`enten.redaction.redact_dict` so the redaction rule
@@ -122,8 +116,6 @@ def configure_logging(level: str = "INFO") -> None:
     third-party libraries that call ``logging.basicConfig`` cannot
     double-emit our structured events.
     """
-    global _CONFIGURED
-
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -164,18 +156,11 @@ def configure_logging(level: str = "INFO") -> None:
     root.setLevel(level)
     root.propagate = False
 
-    _CONFIGURED = True
-
-
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Return a bound logger for ``name``.
 
-    The factory is cheap when ``cache_logger_on_first_use=True`` (the
-    default after :func:`configure_logging`); the cached instance is
-    reused per ``name`` so callers don't pay the configuration cost on
-    every lookup. The return type is announced as
-    :class:`structlog.stdlib.BoundLogger` so static type-checkers see
-    the same surface callers expect from stdlib loggers.
+    The configured lazy proxy binds to the active wrapper on first use. The
+    return type exposes the bound-logger surface callers use.
     """
     logger = structlog.get_logger(name)
     # ``structlog.get_logger`` returns whatever class is configured as
