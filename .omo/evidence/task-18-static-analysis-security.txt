@@ -1,5 +1,0 @@
-Task 18 verification:
-- Files: packages/python/enten/src/enten/static_analysis/security.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_security.py
-- Status: PASS (all required deliverables present)

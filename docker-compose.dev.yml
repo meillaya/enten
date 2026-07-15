@@ -1,48 +1,8 @@
-# ─── enten — dev overlay ───────────────────────────────────────────────
-# Local-dev override on top of docker-compose.yml. Use it as:
-#
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-#
-# What this overlay does:
-#   * Binds the repo into the `app` service so Py / TS source changes
-#     are visible without rebuilding the image (live-reload via the
-#     dev entrypoint added in T40).
-#   * Surfaces Postgres + Jaeger on the loopback ports the rest of the
-#     monorepo expects (5432 / 16686 / 4317 / 4318) — already the case
-#     in the base file but pinned here so devs see the contract.
-#   * Sets dev-friendly env vars (relaxed log levels, no rate limits).
-#   * Wires the OTLP endpoint to the local Jaeger container so
-#     `OTEL_EXPORTER_OTLP_ENDPOINT` resolves through Docker DNS.
-#
-# Do NOT use this overlay in production. The host bind-mount of
-# `packages/` is convenient for `pnpm dev` / `uvicorn --reload`, but
-# it leaks host paths into the container and breaks image portability.
-# The production `app` image (T40) ships its own baked-in source tree.
-
 services:
-  postgres:
+  web:
     environment:
-      # `trust` makes the local connection skip auth — fine inside
-      # docker, never enable on a network-exposed cluster.
-      POSTGRES_HOST_AUTH_METHOD: trust
-
-  app:
-    # The T40 Dockerfile will copy source into the image. Until then,
-    # bind-mount the repo so `uvicorn --reload` / `pnpm dev` see live
-    # changes without a rebuild cycle.
-    volumes:
-      - ./:/app:rw
-    working_dir: /app
+      NODE_ENV: development
+      LOG_LEVEL: debug
+  worker:
     environment:
-      # OTLP endpoint resolves through the compose-managed `ent_en`
-      # network. Falling back to `host.docker.internal` is a no-op on
-      # Linux; it works on Docker Desktop for Mac/Windows.
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-      OTEL_SERVICE_NAME: enten-app
-      # Hot-reload entrypoint. T40 replaces this with the real CMD.
-      # The trailing `tail -f /dev/null` keeps the container alive
-      # when no watcher is running.
-      ENTRYPOINT_OVERRIDE: "uvicorn --reload"
-    # Activate the `app` profile when bringing the stack up:
-    #   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile app up
-    # Or target `app` by name (the profile auto-activates for targeted services).
+      LOG_LEVEL: debug

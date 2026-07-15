@@ -1,0 +1,9 @@
+[
+  {
+    "category": "prompt_injection",
+    "severity": "high",
+    "file": "pr_body",
+    "line": 1,
+    "message": "PR body contains adversarial instructions attempting to override reviewer behavior."
+  }
+]

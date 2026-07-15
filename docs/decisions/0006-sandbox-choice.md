@@ -1,13 +1,13 @@
 ---
 title: ADR 0006 — Docker + E2B sandboxes; Daytona not supported
-status: Accepted
+status: Superseded by ADR 0013
 date: 2026-07-09
 deciders: enten maintainers
 ---
 
 ## Status
 
-Accepted.
+Superseded by ADR 0013. The E2B implementation described here did not meet the verified release contract and now fails closed.
 
 ## Context
 

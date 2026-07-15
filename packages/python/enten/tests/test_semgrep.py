@@ -26,11 +26,15 @@ SEMGREP_TMPFS = {
 
 
 def _docker_available() -> bool:
-    return shutil.which("docker") is not None and subprocess.run(
-        ["docker", "info"],
-        capture_output=True,
-        check=False,
-    ).returncode == 0
+    return (
+        shutil.which("docker") is not None
+        and subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 pytestmark = pytest.mark.skipif(

@@ -9,4 +9,5 @@
 !*.gitkeep
 !*.json
 !*.patch
+!determinism/test_determinism.py
 *.tar.gz

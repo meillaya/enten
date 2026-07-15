@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
 from ..parsers import parse_gitleaks_json, parse_semgrep_json
 from ..sandbox import SandboxProvider
+from ..sandbox.files import collect_repository_files
 from ..sandbox.models import SandboxHandle
 
 # AWS access key IDs are the secret shape the runner explicitly redacts in
@@ -63,23 +63,10 @@ def _redact_message(message: str) -> str:
 
 def _repo_files(repo_path: str) -> dict[str, str]:
     """Read every file under ``repo_path`` into a flat ``{relative_path: text}`` map."""
-    files: dict[str, str] = {}
-    base = Path(repo_path)
-    if not base.exists():
-        return files
-    for path in base.rglob("*"):
-        if path.is_file():
-            rel = path.relative_to(base).as_posix()
-            try:
-                files[rel] = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                files[rel] = path.read_bytes().decode("utf-8", errors="replace")
-    return files
+    return collect_repository_files(repo_path)
 
 
-async def _cat_file(
-    provider: SandboxProvider, handle: SandboxHandle, path: str
-) -> str:
+async def _cat_file(provider: SandboxProvider, handle: SandboxHandle, path: str) -> str:
     """Read ``path`` from the sandbox via ``cat``."""
     result = await provider.run(handle, ["cat", path], timeout_seconds=10)
     return result.stdout
@@ -92,22 +79,16 @@ async def _ensure_tool(
     install_cmd: list[str],
 ) -> None:
     """Ensure ``tool`` is available in the sandbox, installing if necessary."""
-    probe = await provider.run(
-        handle, ["sh", "-c", f"command -v {tool}"], timeout_seconds=30
-    )
+    probe = await provider.run(handle, ["sh", "-c", f"command -v {tool}"], timeout_seconds=30)
     if probe.exit_code == 0:
         return
 
     install = await provider.run(handle, install_cmd, timeout_seconds=180)
     if install.exit_code != 0:
-        raise RuntimeError(
-            f"Failed to install {tool}: {install.stderr or install.stdout}"
-        )
+        raise RuntimeError(f"Failed to install {tool}: {install.stderr or install.stdout}")
 
 
-async def _run_gitleaks(
-    provider: SandboxProvider, handle: SandboxHandle
-) -> list[SecurityFinding]:
+async def _run_gitleaks(provider: SandboxProvider, handle: SandboxHandle) -> list[SecurityFinding]:
     """Run gitleaks and map leaks to :class:`SecurityFinding`."""
     await _ensure_tool(provider, handle, "gitleaks", _GITLEAKS_INSTALL)
 
@@ -142,7 +123,6 @@ async def _run_gitleaks(
     result = parse_gitleaks_json(json_text)
     findings: list[SecurityFinding] = []
     for leak in result.leaks:
-        message = _redact_message(leak.match)
         findings.append(
             SecurityFinding(
                 tool="gitleaks",
@@ -150,7 +130,7 @@ async def _run_gitleaks(
                 severity="HIGH",
                 file=leak.file,
                 line=leak.start_line,
-                message=message,
+                message="Potential secret detected [REDACTED]",
             )
         )
     return findings
@@ -183,9 +163,7 @@ def _parse_bandit_json(data: str) -> list[SecurityFinding]:
     return findings
 
 
-async def _run_bandit(
-    provider: SandboxProvider, handle: SandboxHandle
-) -> list[SecurityFinding]:
+async def _run_bandit(provider: SandboxProvider, handle: SandboxHandle) -> list[SecurityFinding]:
     """Run bandit on Python sources and map results to :class:`SecurityFinding`."""
     await _ensure_tool(provider, handle, "bandit", ["pip", "install", "bandit"])
 
@@ -212,9 +190,7 @@ async def _run_bandit(
     return _parse_bandit_json(json_text)
 
 
-async def _run_semgrep(
-    provider: SandboxProvider, handle: SandboxHandle
-) -> list[SecurityFinding]:
+async def _run_semgrep(provider: SandboxProvider, handle: SandboxHandle) -> list[SecurityFinding]:
     """Run semgrep with the security-audit ruleset and map results."""
     await _ensure_tool(provider, handle, "semgrep", ["pip", "install", "semgrep"])
 

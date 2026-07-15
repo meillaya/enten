@@ -56,8 +56,7 @@ def _to_public(chunk: _Chunk) -> Chunk:
         end_byte=chunk.end_byte,
         text=chunk.text,
         symbols=[
-            Symbol(kind=s.kind, name=s.name, line=s.line, parent=s.parent)
-            for s in chunk.symbols
+            Symbol(kind=s.kind, name=s.name, line=s.line, parent=s.parent) for s in chunk.symbols
         ],
         scope_kind=chunk.scope_kind,
     )

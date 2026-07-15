@@ -1,19 +1,14 @@
 """Sandbox runners that invoke pytest, vitest, semgrep and gitleaks.
 
-These runners are intentionally thin: they construct the command, execute it
-inside a sandbox, fetch the JSON report (when written to a file), and parse it.
-They are not integration-tested here; T22/T34 will exercise them against a
-real ``SandboxProvider`` implementation.
+The runners construct a fixed command, execute it inside a sandbox, fetch its
+report, and parse it into typed verification evidence.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
-
 from enten.parsers import (
     parse_gitleaks_json,
-    parse_pytest_json,
+    parse_pytest_junit_xml,
     parse_semgrep_json,
     parse_vitest_json,
 )
@@ -24,51 +19,23 @@ from enten.parsers.models import (
     SemgrepResult,
     VitestResult,
 )
-
-
-class ExecResult(Protocol):
-    """Result of a sandbox command execution."""
-
-    exit_code: int
-    stdout: str
-    stderr: str
-    duration_ms: int
-
-
-class SandboxHandle(Protocol):
-    """Handle to a running sandbox instance."""
-
-    async def run(self, cmd: list[str], timeout_seconds: int = 120) -> ExecResult: ...
-    async def upload(self, files: dict[str, str | bytes]) -> None: ...
-    async def destroy(self) -> None: ...
-
-
-class SandboxProvider(Protocol):
-    """Factory for creating hermetic sandbox instances."""
-
-    @staticmethod
-    async def create(repo_files: dict[str, str]) -> SandboxHandle: ...
+from enten.sandbox.files import collect_repository_files
+from enten.sandbox.models import SandboxHandle
+from enten.sandbox.protocol import SandboxProvider
 
 
 def _repo_files(repo_path: str) -> dict[str, str]:
     """Read every file under ``repo_path`` into a flat ``{relative_path: text}`` map."""
-    files: dict[str, str] = {}
-    base = Path(repo_path)
-    if not base.exists():
-        return files
-    for path in base.rglob("*"):
-        if path.is_file():
-            rel = path.relative_to(base).as_posix()
-            try:
-                files[rel] = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                files[rel] = path.read_bytes().decode("utf-8", errors="replace")
-    return files
+    return collect_repository_files(repo_path)
 
 
-async def _cat_file(handle: SandboxHandle, path: str) -> str:
+async def _cat_file(
+    sandbox: SandboxProvider,
+    handle: SandboxHandle,
+    path: str,
+) -> str:
     """Read ``path`` from the sandbox via ``cat``."""
-    result = await handle.run(["cat", path], timeout_seconds=10)
+    result = await sandbox.run(handle, ["cat", path], timeout_seconds=10)
     return result.stdout
 
 
@@ -89,7 +56,8 @@ async def run_pytest(
     handle = await sandbox.create(_repo_files(repo_path))
     try:
         if collect_only:
-            result = await handle.run(
+            result = await sandbox.run(
+                handle,
                 ["pytest", "--collect-only", "-q", target],
                 timeout_seconds=120,
             )
@@ -98,30 +66,40 @@ async def run_pytest(
                 summary=PytestSummary(),
                 tests=[],
             )
-        _ = await handle.run(
-            ["pytest", "--json-report", "--json-report-file=/tmp/pytest-report.json", target],
+        command_result = await sandbox.run(
+            handle,
+            [
+                "pytest",
+                "-o",
+                "junit_family=legacy",
+                "--junitxml=/tmp/pytest-report.xml",
+                target,
+            ],
             timeout_seconds=120,
         )
-        json_text = await _cat_file(handle, "/tmp/pytest-report.json")
-        return parse_pytest_json(json_text)
+        xml_text = await _cat_file(sandbox, handle, "/tmp/pytest-report.xml")
+        return parse_pytest_junit_xml(
+            xml_text,
+            process_exit_code=command_result.exit_code,
+        )
     finally:
-        await handle.destroy()
+        await sandbox.destroy(handle)
 
 
-async def run_vitest(
-    sandbox: SandboxProvider, repo_path: str, target: str = "."
-) -> VitestResult:
+async def run_vitest(sandbox: SandboxProvider, repo_path: str, target: str = ".") -> VitestResult:
     """Run ``vitest run --reporter=json`` in a sandbox and parse the report."""
     handle = await sandbox.create(_repo_files(repo_path))
     try:
-        _ = await handle.run(
+        command_result = await sandbox.run(
+            handle,
             ["vitest", "run", "--reporter=json", "--outputFile=/tmp/vitest-report.json", target],
             timeout_seconds=120,
         )
-        json_text = await _cat_file(handle, "/tmp/vitest-report.json")
-        return parse_vitest_json(json_text)
+        json_text = await _cat_file(sandbox, handle, "/tmp/vitest-report.json")
+        parsed = parse_vitest_json(json_text)
+        return parsed.model_copy(update={"exit_code": command_result.exit_code})
     finally:
-        await handle.destroy()
+        await sandbox.destroy(handle)
 
 
 async def run_semgrep(
@@ -137,17 +115,19 @@ async def run_semgrep(
             for rule in custom_rules:
                 cmd.extend(["--config", rule])
         cmd.append("/workspace")
-        result = await handle.run(cmd, timeout_seconds=120)
-        return parse_semgrep_json(result.stdout)
+        result = await sandbox.run(handle, cmd, timeout_seconds=120)
+        parsed = parse_semgrep_json(result.stdout)
+        return parsed.model_copy(update={"exit_code": result.exit_code})
     finally:
-        await handle.destroy()
+        await sandbox.destroy(handle)
 
 
 async def run_gitleaks(sandbox: SandboxProvider, repo_path: str) -> GitleaksResult:
     """Run ``gitleaks detect`` in a sandbox and parse the JSON report."""
     handle = await sandbox.create(_repo_files(repo_path))
     try:
-        _ = await handle.run(
+        command_result = await sandbox.run(
+            handle,
             [
                 "gitleaks",
                 "detect",
@@ -161,7 +141,8 @@ async def run_gitleaks(sandbox: SandboxProvider, repo_path: str) -> GitleaksResu
             ],
             timeout_seconds=120,
         )
-        json_text = await _cat_file(handle, "/tmp/gitleaks-report.json")
-        return parse_gitleaks_json(json_text)
+        json_text = await _cat_file(sandbox, handle, "/tmp/gitleaks-report.json")
+        parsed = parse_gitleaks_json(json_text)
+        return parsed.model_copy(update={"exit_code": command_result.exit_code})
     finally:
-        await handle.destroy()
+        await sandbox.destroy(handle)

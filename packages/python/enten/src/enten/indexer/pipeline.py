@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,8 +44,17 @@ ON CONFLICT (id) DO UPDATE SET
 """
 
 
-def _chunk_id(repo_id: str, chunk: chunker.Chunk) -> str:
-    payload = f"{repo_id}:{chunk.path}:{chunk.start_line}:{chunk.end_line}"
+def _chunk_id(repo_id: str, snapshot_id: str, chunk: chunker.Chunk) -> str:
+    payload = ":".join(
+        (
+            repo_id,
+            snapshot_id,
+            chunk.path,
+            str(chunk.start_line),
+            str(chunk.end_line),
+            _content_hash(chunk.text),
+        )
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -71,65 +81,103 @@ def _symbols_to_json(symbols: list[chunker.Symbol]) -> str:
     )
 
 
+def _resolve_snapshot_id(repo_path: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return "working-tree"
+    return result.stdout.strip() or "working-tree"
+
+
 async def index_repo_for_repo(
     repo_path: str,
     repo_id: str,
     embedding: EmbeddingProvider,
+    *,
+    snapshot_id: str | None = None,
 ) -> IndexStats:
-    settings = Settings(_env_file=None)
+    settings = Settings.model_validate({})
     chunks = chunker.chunk(Path(repo_path))
-
-    total_tokens = sum(_token_count(chunk.text) for chunk in chunks)
-    if total_tokens > settings.max_pr_diff_tokens:
-        raise ValueError(
-            f"repo token count {total_tokens} exceeds MAX_PR_DIFF_TOKENS "
-            f"{settings.max_pr_diff_tokens}"
-        )
+    resolved_snapshot = snapshot_id or _resolve_snapshot_id(Path(repo_path))
 
     batch_size = settings.embedding_batch_size
     indexed = 0
     updated = 0
     skipped = 0
-    pending: list[chunker.Chunk] = []
+    pending: list[tuple[str, chunker.Chunk]] = []
+    incoming_ids = {_chunk_id(repo_id, resolved_snapshot, item) for item in chunks}
 
     async with get_session() as session:
-        for chunk in chunks:
-            chunk_id = _chunk_id(repo_id, chunk)
-            existing = await session.scalar(
-                text("SELECT content_hash FROM vec.chunks WHERE id = :id"),
-                {"id": chunk_id},
+        existing_rows = (
+            await session.execute(
+                text(
+                    "SELECT id, path, start_line, end_line, content_hash "
+                    "FROM vec.chunks WHERE repo_id = :repo_id"
+                ),
+                {"repo_id": repo_id},
             )
+        ).mappings()
+        existing_by_id = {row["id"]: row for row in existing_rows}
+        existing_by_location = {
+            (row["path"], row["start_line"], row["end_line"]): row
+            for row in existing_by_id.values()
+        }
+
+        for chunk in chunks:
+            chunk_id = _chunk_id(repo_id, resolved_snapshot, chunk)
             content_hash = _content_hash(chunk.text)
-            if existing == content_hash:
+            existing = existing_by_id.get(chunk_id)
+            if existing is not None and existing["content_hash"] == content_hash:
                 skipped += 1
                 continue
-            if existing is None:
-                indexed += 1
-            else:
+            location = (chunk.path, chunk.start_line, chunk.end_line)
+            if location in existing_by_location:
                 updated += 1
-            pending.append(chunk)
+            else:
+                indexed += 1
+            pending.append((chunk_id, chunk))
 
         for i in range(0, len(pending), batch_size):
             batch = pending[i : i + batch_size]
-            texts = [c.text for c in batch]
+            texts = [item.text for _, item in batch]
             embeddings = await embedding.embed_batch(texts)
             values = []
-            for c, emb in zip(batch, embeddings, strict=True):
+            for (chunk_id, item), emb in zip(batch, embeddings, strict=True):
                 values.append(
                     {
-                        "id": _chunk_id(repo_id, c),
+                        "id": chunk_id,
                         "repo_id": repo_id,
-                        "path": c.path,
-                        "lang": c.lang,
-                        "start_line": c.start_line,
-                        "end_line": c.end_line,
-                        "text": c.text,
+                        "path": item.path,
+                        "lang": item.lang,
+                        "start_line": item.start_line,
+                        "end_line": item.end_line,
+                        "text": item.text,
                         "embedding": json.dumps(emb),
-                        "symbols": _symbols_to_json(c.symbols),
-                        "content_hash": _content_hash(c.text),
+                        "symbols": _symbols_to_json(item.symbols),
+                        "content_hash": _content_hash(item.text),
                     }
                 )
             await session.execute(text(_UPSERT_SQL), values)
+
+        if incoming_ids:
+            await session.execute(
+                text(
+                    "DELETE FROM vec.chunks WHERE repo_id = :repo_id "
+                    "AND NOT (id = ANY(CAST(:ids AS text[])))"
+                ),
+                {"repo_id": repo_id, "ids": sorted(incoming_ids)},
+            )
+        else:
+            await session.execute(
+                text("DELETE FROM vec.chunks WHERE repo_id = :repo_id"),
+                {"repo_id": repo_id},
+            )
 
         await session.commit()
 

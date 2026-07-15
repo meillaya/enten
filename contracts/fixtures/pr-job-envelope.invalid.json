@@ -1,0 +1,20 @@
+{
+  "version": "2",
+  "installation_id": 0,
+  "delivery_id": "not-a-uuid",
+  "repository": {
+    "id": 1296269,
+    "full_name": "missing-owner-separator"
+  },
+  "pull_request": {
+    "number": 0,
+    "head_sha": "not-a-sha"
+  },
+  "action": "closed",
+  "actor": {
+    "id": 0,
+    "login": ""
+  },
+  "traceparent": "invalid",
+  "unknown": true
+}

@@ -7,11 +7,15 @@ of the suite.
 
 from __future__ import annotations
 
+import inspect
 import json
 import shutil
 import subprocess
 from contextlib import asynccontextmanager
+from pathlib import Path
+from uuid import uuid4
 
+import anyio
 import pytest
 
 from enten.sandbox import SandboxHandle
@@ -19,11 +23,15 @@ from enten.sandbox.docker import DockerSandbox
 
 
 def _docker_available() -> bool:
-    return shutil.which("docker") is not None and subprocess.run(
-        ["docker", "info"],
-        capture_output=True,
-        check=False,
-    ).returncode == 0
+    return (
+        shutil.which("docker") is not None
+        and subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 pytestmark = pytest.mark.skipif(
@@ -91,13 +99,41 @@ async def test_container_hardening_drops_capabilities():
 
     cap_drop = config.get("HostConfig", {}).get("CapDrop", [])
     assert "ALL" in cap_drop
+    assert config["Config"]["Labels"]["enten.sandbox"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_has_bounded_writable_tmpfs() -> None:
+    async with _fresh_sandbox() as (handle, provider):
+        result = await provider.run(
+            handle,
+            ["sh", "-c", "printf ok >/tmp/report && cat /tmp/report"],
+        )
+
+    assert result.exit_code == 0
+    assert result.stdout == "ok"
+
+
+@pytest.mark.asyncio
+async def test_workspace_is_tmpfs_instead_of_a_host_bind() -> None:
+    async with _fresh_sandbox() as (handle, _provider):
+        inspected = subprocess.run(
+            ["docker", "inspect", handle.id],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        config = json.loads(inspected.stdout)[0]
+
+    assert "/workspace" in config["HostConfig"]["Tmpfs"]
+    assert all(mount["Destination"] != "/workspace" for mount in config["Mounts"])
 
 
 @pytest.mark.asyncio
 async def test_upload_copies_files_into_container():
     async with _fresh_sandbox() as (handle, provider):
-        await provider.upload(handle, {"hello.txt": "world"})
-        result = await provider.run(handle, ["cat", "/workspace/hello.txt"])
+        await provider.upload(handle, {"nested/hello.txt": "world"})
+        result = await provider.run(handle, ["cat", "/workspace/nested/hello.txt"])
 
     assert result.exit_code == 0
     assert result.stdout == "world"
@@ -125,3 +161,61 @@ async def test_sandbox_handle_model():
     assert handle.id == "abc123"
     assert handle.provider == "docker"
     assert handle.image == "python:3.12-slim"
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_parent_path_escape() -> None:
+    provider = DockerSandbox()
+    escaped = Path("/tmp") / f"enten-escape-{uuid4().hex}"
+    handle = None
+    try:
+        with pytest.raises(ValueError, match="relative"):
+            handle = await provider.create({f"../{escaped.name}": "do not write"})
+    finally:
+        if handle is not None:
+            await provider.destroy(handle)
+        escaped.unlink(missing_ok=True)
+
+    assert not escaped.exists()
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_absolute_path_escape(tmp_path: Path) -> None:
+    async with _fresh_sandbox() as (handle, provider):
+        escaped = tmp_path / "escaped.txt"
+        with pytest.raises(ValueError, match="relative"):
+            await provider.upload(handle, {str(escaped): "do not write"})
+
+    assert not escaped.exists()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_run_destroys_container() -> None:
+    provider = DockerSandbox()
+    handle = await provider.create({})
+
+    try:
+        with anyio.move_on_after(0.2) as cancel_scope:
+            _ = await provider.run(handle, ["sleep", "30"])
+        ps = subprocess.run(
+            ["docker", "ps", "-q", "--filter", f"id={handle.id}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    finally:
+        await provider.destroy(handle)
+
+    assert cancel_scope.cancel_called
+    assert ps.stdout.strip() == ""
+
+
+def test_default_sandbox_image_is_digest_pinned() -> None:
+    assert DockerSandbox.IMAGE.startswith("python:3.12-slim@sha256:")
+
+
+def test_sandbox_runtime_does_not_require_docker_cli() -> None:
+    source = inspect.getsource(DockerSandbox)
+    assert "subprocess.run" not in source
+    assert '"docker", "exec"' not in source
+    assert '"docker", "cp"' not in source

@@ -7,20 +7,27 @@ inside this module — the verdict is closed-form and reproducible.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Protocol, cast
+from typing import Literal
 
 from pydantic import BaseModel
 
 from enten.parsers import runners as _runners
+from enten.parsers.models import PytestResult, VitestResult
 from enten.sandbox.models import ExecResult
-from enten.verification.flaky import SandboxFactory, SandboxHandle, run_with_flaky_check
+from enten.sandbox.models import SandboxHandle as ProviderSandboxHandle
+from enten.verification.flaky import (
+    RunSummary,
+    SandboxFactory,
+    SandboxHandle,
+    run_with_flaky_check,
+)
 
 
 class RunEvidence(BaseModel):
     """Structured evidence for a single verification run."""
 
     exit_code: int
-    summary: dict[str, Any]
+    summary: RunSummary
     duration_ms: int
     sandbox_id: str
     command: list[str]
@@ -54,7 +61,7 @@ def _map_outcome(
 def _log_paths(language: str) -> list[str]:
     """Report artifact paths produced by the runner for ``language``."""
     if language in {"python", "py"}:
-        return ["/tmp/pytest-report.json"]
+        return ["/tmp/pytest-report.xml"]
     if language in {"typescript", "ts", "javascript", "js"}:
         return ["/tmp/vitest-report.json"]
     return []
@@ -65,8 +72,9 @@ def _runner_command(language: str, target_selector: str) -> list[str]:
     if language in {"python", "py"}:
         return [
             "pytest",
-            "--json-report",
-            "--json-report-file=/tmp/pytest-report.json",
+            "-o",
+            "junit_family=legacy",
+            "--junitxml=/tmp/pytest-report.xml",
             target_selector,
         ]
     if language in {"typescript", "ts", "javascript", "js"}:
@@ -80,42 +88,48 @@ def _runner_command(language: str, target_selector: str) -> list[str]:
     return [target_selector]
 
 
-class RunnableSandboxHandle(SandboxHandle, Protocol):
-    """Sandbox handle that can execute commands and accept uploads."""
-
-    async def run(self, cmd: list[str], timeout_seconds: int = 120) -> ExecResult: ...
-    async def upload(self, files: dict[str, str | bytes]) -> None: ...
-    async def destroy(self) -> None: ...
-
-
 class _SandboxProviderAdapter:
     """Adapt a SandboxHandle into the SandboxProvider interface expected by runners."""
 
-    _handle: RunnableSandboxHandle
+    _factory: SandboxFactory
+    _handle: SandboxHandle
 
-    def __init__(self, handle: RunnableSandboxHandle) -> None:
+    def __init__(self, factory: SandboxFactory, handle: SandboxHandle) -> None:
+        self._factory = factory
         self._handle = handle
 
-    async def create(self, repo_files: dict[str, str]) -> RunnableSandboxHandle:
-        """Return the handle that was injected by the flaky handler."""
+    async def create(self, repo_files: dict[str, str]) -> ProviderSandboxHandle:
         _ = repo_files
-        return self._handle
+        return ProviderSandboxHandle(
+            id=self._handle.id,
+            provider="injected",
+            image="injected",
+        )
 
     async def run(
-        self, handle: RunnableSandboxHandle, cmd: list[str], timeout_seconds: int = 120
+        self,
+        handle: ProviderSandboxHandle,
+        cmd: list[str],
+        timeout_seconds: int = 120,
     ) -> ExecResult:
         """Delegate command execution to the injected handle."""
         _ = handle
-        return await self._handle.run(cmd, timeout_seconds=timeout_seconds)
+        return await self._factory.run(
+            self._handle,
+            cmd,
+            timeout_seconds=timeout_seconds,
+        )
 
     async def upload(
-        self, handle: RunnableSandboxHandle, files: dict[str, str | bytes]
+        self,
+        handle: ProviderSandboxHandle,
+        files: dict[str, str | bytes],
     ) -> None:
         """Delegate file upload to the injected handle."""
         _ = handle
-        await self._handle.upload(files)
+        await self._factory.upload(self._handle, files)
 
-    async def destroy(self, handle: RunnableSandboxHandle) -> None:
+    async def destroy(self, handle: ProviderSandboxHandle) -> None:
         """No-op: the flaky handler owns sandbox lifecycle."""
         _ = handle
 
@@ -144,8 +158,11 @@ async def verify(
     log_paths = _log_paths(language)
     command = _runner_command(language, target_selector)
 
-    async def runner(handle: SandboxHandle, selector: str) -> object:
-        adapter = _SandboxProviderAdapter(cast(RunnableSandboxHandle, handle))
+    async def runner(
+        handle: SandboxHandle,
+        selector: str,
+    ) -> PytestResult | VitestResult:
+        adapter = _SandboxProviderAdapter(sandbox_factory, handle)
         if language in {"python", "py"}:
             return await _runners.run_pytest(adapter, repo_path, selector)
         if language in {"typescript", "ts", "javascript", "js"}:

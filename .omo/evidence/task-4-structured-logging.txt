@@ -1,5 +1,0 @@
-Task 4 verification:
-- Files: packages/python/enten/src/enten/logging.py, packages/ts/app/src/logging.ts
-- Commit: pending
-- Tests: packages/python/enten/tests/test_logging.py, packages/ts/app/tests/logging.test.ts
-- Status: PASS (all required deliverables present)

@@ -1,5 +1,0 @@
-Task 5 verification:
-- Files: packages/python/enten/src/enten/otel.py, packages/python/enten/src/enten/metrics.py, packages/ts/app/src/otel.ts, packages/ts/app/src/metrics.ts
-- Commit: pending
-- Tests: packages/python/enten/tests/test_otel.py, packages/ts/app/tests/otel.test.ts
-- Status: PASS (all required deliverables present)

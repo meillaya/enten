@@ -1,5 +1,0 @@
-Task 17 verification:
-- Files: packages/python/enten/src/enten/review/generator.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_review_generator.py
-- Status: PASS (all required deliverables present)

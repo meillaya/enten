@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://enten.dev/contracts/pr-job-envelope.schema.json",
+  "title": "Enten pull request job envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "installation_id",
+    "delivery_id",
+    "repository",
+    "pull_request",
+    "action",
+    "actor",
+    "traceparent"
+  ],
+  "properties": {
+    "version": { "const": "1" },
+    "installation_id": { "type": "integer", "minimum": 1 },
+    "delivery_id": { "type": "string", "format": "uuid" },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "full_name"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "full_name": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "head_sha"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }
+      }
+    },
+    "action": {
+      "enum": ["opened", "reopened", "synchronize", "ready_for_review"]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "login"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "login": { "type": "string", "minLength": 1 }
+      }
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^(?!ff)[0-9a-f]{2}-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "tracestate": { "type": "string", "minLength": 1, "maxLength": 512 }
+  }
+}

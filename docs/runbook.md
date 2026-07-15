@@ -1,170 +1,112 @@
-# enten Runbook
+# Operations runbook
 
-Operational playbooks for the most common failure modes. Each scenario
-lists symptoms, diagnostic commands, and remediation steps.
+Commands assume the repository root and the Compose project name `enten`. Never use global Docker or volume prune on a shared host.
 
----
+## Webhook is not enqueueing jobs
 
-## 1. Bot stopped responding
+1. Inspect edge health and logs:
 
-**Symptoms:** No PR comments or check runs; webhook deliveries queue up;
-worker process CPU/memory looks idle.
-
-**Diagnose:**
-
-1. Check Jaeger traces for the last hour:
    ```bash
-   open http://localhost:16686
-   # Service = "enten-worker"; look for errors or missing spans.
+   curl --fail http://127.0.0.1:3000/health
+   docker compose logs --tail 200 web
    ```
-2. Check the queue state:
+
+2. Inspect recent queue state:
+
    ```bash
    docker compose exec -T postgres psql -U enten -d enten -c \
-     "SELECT state, count(*) FROM jobs WHERE created_at > now() - interval '1 hour' GROUP BY state"
-   ```
-3. Check worker logs:
-   ```bash
-   docker compose logs -f --tail 200 worker
+     "SELECT state, count(*) FROM jobs WHERE created_at > now() - interval '1 hour' GROUP BY state ORDER BY state"
    ```
 
-**Remediate:**
+3. In GitHub, check the delivery response:
+   - `401`: webhook secret/signature mismatch;
+   - `413`: body exceeds the configured limit;
+   - `415`: not `application/json`;
+   - `422`: malformed supported payload;
+   - `503`: bounded enqueue deadline or database failure;
+   - `200 ignored`: unsupported event/action or draft PR.
 
-- If jobs are stuck in `indexing`/`reviewing`/`testing`/`verifying`/`commenting` for
-  longer than expected, restart the worker container:
-  ```bash
-  docker compose restart worker
-  ```
-- If Postgres is unreachable, verify `database_url` / `DATABASE_URL` and that
-  the `postgres` service is healthy (`docker compose ps`).
-- If traces show repeated provider errors, see scenario 2.
+Rotate a compromised webhook secret in GitHub and the deployment secret store, restart `web`, then redeliver a non-sensitive recent event.
 
----
+## Worker is not claiming
 
-## 2. Spike in failed jobs
+```bash
+docker compose logs --tail 200 worker
+docker compose ps
+docker compose exec -T postgres psql -U enten -d enten -c \
+  "SELECT run_id,state,attempts,claimed_by,claim_generation,lease_expires_at,last_error FROM jobs ORDER BY created_at DESC LIMIT 20"
+```
 
-**Symptoms:** Error budget check fails; `failed`/`errored` job counts jump;
-GitHub Checks show "failure".
+The worker intentionally refuses to start without a real App ID and readable PEM. It also needs the Docker socket and correct supplemental group. Check:
 
-**Diagnose:**
+```bash
+stat -c '%g %a %U:%G' /var/run/docker.sock
+docker compose config --format json | jq '.services.worker | {group_add,volumes,environment}'
+```
 
-1. Look at recent failure reasons:
-   ```bash
-   docker compose exec -T postgres psql -U enten -d enten -c \
-     "SELECT state, error_message, count(*) FROM jobs WHERE state IN ('failed','errored') AND created_at > now() - interval '6 hours' GROUP BY state, error_message"
-   ```
-2. Check static-analysis rules for false positives:
-   ```bash
-   uv run semgrep --config rules/ --error tests/fixtures/prs/smoke/
-   ```
-3. Check LLM provider status:
-   ```bash
-   curl -s https://status.openai.com/api/v2/status.json | jq '.status.description'
-   # or OpenRouter status page
-   ```
+Restarting the worker is safe: expired leases are reclaimed with a new generation, and stale generations cannot update checkpoints.
 
-**Remediate:**
+## Verification failures
 
-- If a new Semgrep/Gitleaks rule is firing on benign fixtures, pin or disable
-  the rule in `rules/` and restart the worker.
-- If the provider is down, switch to the fallback provider via
-  `LLM_PROVIDER=ollama` or an alternative OpenRouter model.
-- Requeue affected PRs by inserting new jobs or waiting for the webhook replay.
+A nonzero candidate exit is a product verdict, not an infrastructure incident. An `error` indicates checkout, sandbox, parser, scanner, or configuration failure.
 
----
+```bash
+docker compose logs --tail 300 worker
+docker ps -a --filter label=enten.sandbox=true \
+  --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}'
+```
 
-## 3. Cost spike
+Confirm `SANDBOX_DOCKER_IMAGE` exists on the worker host and `VERIFICATION_COMMAND` is valid for that image. The default compileall command is only a syntax smoke check. E2B is unsupported and must not be selected as an emergency fallback.
 
-**Symptoms:** `enten cost` shows unusually high spend; LLM provider bill
-increases; many calls to an expensive model.
+## Indeterminate GitHub effect
 
-**Diagnose:**
+An effect becomes `indeterminate` when a GitHub request may have succeeded but its receipt is not durable. Automatic retry is disabled to prevent duplicates.
 
-1. Grep `llm_calls` for the high-cost provider/model:
+1. Stop the worker.
+2. Query the effect and matching checkpoints:
+
    ```bash
    docker compose exec -T postgres psql -U enten -d enten -c \
-     "SELECT model, count(*), sum(cost_usd) FROM llm_calls WHERE created_at > now() - interval '24 hours' GROUP BY model ORDER BY sum DESC"
-   ```
-2. Run the cost CLI for the last day:
-   ```bash
-   uv run enten cost --since 1d
-   ```
-3. Compare against the per-PR cap:
-   ```bash
-   docker compose exec -T postgres psql -U enten -d enten -c \
-     "SELECT run_id, cost_usd FROM pr_reviews WHERE cost_usd > 0.50 AND created_at > now() - interval '24 hours'"
+    "SELECT run_id,effect_key,state,marker,external_id,last_error FROM external_effects WHERE state='indeterminate' ORDER BY COALESCE(completed_at,attempted_at,prepared_at) DESC"
    ```
 
-**Remediate:**
+3. Use the marker and reviewed SHA to inspect existing GitHub Checks/comments.
+4. Reconcile with a forward repair that records the observed external ID or creates a new explicitly versioned effect key. Never change `indeterminate` back to `prepared` blindly.
+5. Restart the worker after reconciliation.
 
-- Lower `PER_PR_COST_CAP_USD` and `LLM_MAX_ITERATIONS`.
-- Switch the default model to a cheaper option (`gpt-4o-mini`, local Ollama).
-- If a specific PR is looping, block it manually or add a circuit-breaker
-  override.
+## Migration drift or baseline failure
 
----
+```bash
+scripts/db-migrate.sh
+```
 
-## 4. Sandbox exhaustion
+The idempotent apply command validates every recorded filename and raw-byte checksum before applying a contiguous pending batch. If a checksum differs, restore the released file byte-for-byte and add a new forward migration. If baseline verification fails, compare the exact expected schema on a database backup or disposable clone. Do not use `db-rollback.sh` on released data; the script is a documented refusal path.
 
-**Symptoms:** Jobs fail with sandbox creation errors; high Docker CPU/memory;
-disk pressure on the worker host.
+## Sandbox cleanup
 
-**Diagnose:**
+Normal cleanup is automatic. When a process is killed, remove only project-owned resources:
 
-1. List orphaned containers:
-   ```bash
-   docker ps -a --filter "label=enten.sandbox" --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}"
-   ```
-2. Count sandbox rows without a matching destroyed container:
-   ```bash
-   docker compose exec -T postgres psql -U enten -d enten -c \
-     "SELECT provider, count(*) FROM sandbox_runs WHERE destroyed_at IS NULL AND created_at < now() - interval '1 hour' GROUP BY provider"
-   ```
+```bash
+docker ps -a --filter label=enten.sandbox=true --format '{{.ID}} {{.Status}}'
+docker rm -f <exact-owned-container-id>
+find /tmp -maxdepth 1 -type d -name 'enten-public-pr-*' -print
+```
 
-**Remediate:**
+For the local stack:
 
-- Run the sandbox cleanup script:
-  ```bash
-  docker compose exec worker uv run python -m enten.sandbox.cleanup
-  # fallback: prune stopped containers manually
-  docker container prune -f --filter "label=enten.sandbox"
-  ```
-- Restart the worker so the factory cache is cleared.
-- If using E2B, verify `E2B_API_KEY` and check the E2B dashboard for stuck
-  sandboxes.
+```bash
+scripts/dev-down.sh              # preserve database/model volumes
+scripts/dev-down.sh --drop-data  # destructive, disposable environments only
+```
 
----
+Do not remove unrelated Testcontainers sessions, k3d containers, images, caches, or volumes by pattern alone.
 
-## 5. Webhook 401
+## Trace discontinuity
 
-**Symptoms:** GitHub webhook deliveries fail with HTTP 401; signature
-verification errors in TS edge logs.
+A job with a missing, malformed, or mismatched authenticated carrier fails before pipeline execution. Compare the stored `jobs.trace_id`, payload `traceparent`, edge enqueue span, and worker consume span. Public inbound trace headers should never be the root of the trusted trace.
 
-**Diagnose:**
+Jaeger is available at `http://127.0.0.1:16686` in Compose. A complete review has edge receive/auth/enqueue, worker consume, and reserve/propose/findings/verify/persist/report pipeline spans.
 
-1. Check the configured secret:
-   ```bash
-   grep GITHUB_WEBHOOK_SECRET .env
-   ```
-2. Compare it with the secret shown in the GitHub App's **Webhook** section.
-3. Verify the TS edge is reading the same secret:
-   ```bash
-   docker compose logs -f app | grep -i signature
-   ```
+## Cost and model components
 
-**Remediate:**
-
-- If the values differ, update `.env` (or the production secret store) to match
-  the GitHub App config and restart the app service:
-  ```bash
-  docker compose restart app
-  ```
-- If the secret was rotated, re-deliver a recent webhook from the GitHub App
-  **Advanced** tab to confirm the new signature verifies.
-
----
-
-## See also
-
-- `docs/oncall.md` — on-call rotation and escalation contacts
-- `scripts/healthcheck-all.sh` — automated acceptance-criteria checks
-- `scripts/error-budget-check.sh` — daily error-budget gate
+The default production worker generator makes no LLM calls. `enten cost` reports persisted local `ReviewRun` totals; the LLM client additionally writes `llm_calls` when invoked by explicit model/eval callers. Provider outage procedures do not apply to the default worker.

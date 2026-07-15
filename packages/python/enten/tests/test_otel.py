@@ -131,4 +131,3 @@ def test_metrics_server_exposes_recorded_metrics(
     assert "pr_review_duration_seconds" in body
 
     server_holder[0].shutdown()
-

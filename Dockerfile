@@ -1,111 +1,64 @@
 # syntax=docker/dockerfile:1
-# ─────────────────────────────────────────────────────────────────────────
-# enten — production image
-#
-# Multi-stage build:
-#   1. builder  : resolve Python deps with uv, build TypeScript apps with pnpm
-#   2. runtime  : copy the venv + built artifacts, run as non-root
-#
-# Health check hits the TS metrics port (9090) which serves the same Hono
-# app as the main webhook port (3000), so /health is available there too.
-# ─────────────────────────────────────────────────────────────────────────
 
-# ─── Builder stage ───────────────────────────────────────────────────────
-FROM python:3.12-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS builder
+FROM node:22.13.0-bookworm-slim@sha256:f5a0871ab03b035c58bdb3007c3d177b001c2145c18e81817b71624dcf7d8bff AS node
+FROM python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS builder
 
-# Pin uv to a released version — never use :latest in production.
-COPY --from=ghcr.io/astral-sh/uv:0.5.5@sha256:dc60491f42c9c7228fe2463f551af49a619ebcc9cbd10a470ced7ada63aa25d4 \
-    /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 
-# Pin Node.js to the LTS version required by the TS workspace.
-ARG NODE_VERSION=22.13.0
-ARG PNPM_VERSION=11.10.0
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        xz-utils \
-    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-        | tar -xJf - -C /usr/local --strip-components=1 \
-    && npm install -g "pnpm@${PNPM_VERSION}" \
-    && rm -rf /var/lib/apt/lists/*
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && npm install --global pnpm@11.10.0
 
 WORKDIR /app
 
-# Copy Python workspace manifests first so `uv sync` can cache the layer.
-COPY pyproject.toml uv.lock ./
-COPY README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY packages/python ./packages/python
+RUN uv sync --frozen --all-packages --no-dev
 
-# Copy TypeScript workspace manifests.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/ts ./packages/ts
+RUN export CI=true \
+    && pnpm install --frozen-lockfile \
+    && pnpm --filter './packages/ts/*' build \
+    && pnpm prune --prod
 
-# Install Python dependencies for the whole workspace (without the projects
-# themselves — source is copied in the runtime stage and installed there).
-RUN uv sync --frozen --no-install-project --all-packages
-
-# Install and build the TypeScript workspace.
-RUN pnpm install --frozen-lockfile \
-    && pnpm --filter './packages/ts/*' build
-
-# ─── Runtime stage ───────────────────────────────────────────────────────
-FROM python:3.12-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS runtime
+FROM python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS runtime
 
 LABEL org.opencontainers.image.title="enten"
-LABEL org.opencontainers.image.description="enten - AI engineering agent"
-LABEL org.opencontainers.image.source="https://github.com/enten/enten"
+LABEL org.opencontainers.image.description="Deterministic GitHub pull-request review agent"
+LABEL org.opencontainers.image.source="https://github.com/Meillaya/enten"
 
-ARG NODE_VERSION=22.13.0
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        xz-utils \
-    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-        | tar -xJf - -C /usr/local --strip-components=1 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user (UID/GID 1000) — the container must never run as root.
 RUN groupadd --gid 1000 enten \
-    && useradd --uid 1000 --gid enten --shell /bin/false --create-home enten
+    && useradd --uid 1000 --gid enten --shell /usr/sbin/nologin --create-home enten
 
 WORKDIR /app
 
-# Copy the Python virtual environment from the builder.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder --chown=enten:enten /app/.venv ./.venv
-
-# Copy source tree and built TypeScript artifacts.
-COPY --chown=enten:enten . .
 COPY --from=builder --chown=enten:enten /app/packages/ts/app/dist ./packages/ts/app/dist
 COPY --from=builder --chown=enten:enten /app/packages/ts/app/node_modules ./packages/ts/app/node_modules
-COPY --from=builder --chown=enten:enten /app/node_modules ./node_modules
-COPY --from=builder --chown=enten:enten /app/packages/ts/app/package.json ./packages/ts/app/package.json
+COPY --chown=enten:enten packages/python ./packages/python
+COPY --chown=enten:enten migrations ./migrations
+COPY --chown=enten:enten prompts ./prompts
+COPY --chown=enten:enten rules ./rules
+COPY --chown=enten:enten health.py ./health.py
 
-# Install the Python package itself into the venv so the `enten` console
-# script is available for `uv run enten worker`.
-COPY --from=ghcr.io/astral-sh/uv:0.5.5@sha256:dc60491f42c9c7228fe2463f551af49a619ebcc9cbd10a470ced7ada63aa25d4 \
-    /uv /uvx /bin/
-RUN uv pip install --no-deps -e ./packages/python/enten \
-    && rm -f /uv /uvx
+ENV DATABASE_URL=postgresql+asyncpg://enten:enten@postgres:5432/enten \
+    ENTEN_MIGRATIONS_DIR=/app/migrations \
+    HOME=/home/enten \
+    METRICS_PORT=9091 \
+    NODE_ENV=production \
+    PATH=/app/.venv/bin:$PATH \
+    PORT=3000 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 USER 1000:1000
 
-# Default listening ports. The TS app serves /health on both ports because
-# it reuses the same Hono app for the main listener and the metrics listener.
-ENV PORT=3000
-ENV METRICS_PORT=9090
-ENV PYTHONUNBUFFERED=1
-ENV NODE_ENV=production
-ENV PATH="/app/.venv/bin:${PATH}"
+EXPOSE 3000 9091
 
-EXPOSE 3000 9090
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD ["python", "/app/health.py"]
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python /app/health.py
-
-# Run the Python worker and the TypeScript webhook server in the same
-# container. In a larger deployment these are split into separate services.
-CMD ["sh", "-c", "enten worker & node packages/ts/app/dist/server.js & wait"]
+CMD ["node", "packages/ts/app/dist/server.js"]

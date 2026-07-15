@@ -41,6 +41,7 @@ env/
 ENV/
 .python-version
 .uv-cache/
+.devenv/
 *.egg-info/
 *.egg
 .pytest_cache/
@@ -53,17 +54,11 @@ htmlcov/
 .nox/
 
 # ─── OMO (oh-my-opencode) ──────────────────────────────────────────────
-# The user has a global gitignore that drops the entire `.omo/` tree.
-# Re-allow the plan files (shared team context) and keep the rest ignored.
+# Keep only reviewable plans; every other OMX artifact is private runtime state.
 !.omo/
+.omo/*
 !.omo/plans/
 !.omo/plans/**
-# Everything else under .omo/ is private runtime state.
-.omo/boulder.json
-.omo/evidence/
-.omo/drafts/
-.omo/run-continuation/
-.omo/notepads/
 # OMC sibling tools (opencode / claudecode runtime state)
 .omc/
 .omx/

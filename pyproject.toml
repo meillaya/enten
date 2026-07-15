@@ -40,8 +40,6 @@ addopts = [
     "-q",
     "--strict-markers",
     "--strict-config",
-    "--cov",
-    "--cov-branch",
-    "--cov-report=term-missing",
 ]
-testpaths = ["tests"]
+testpaths = ["tests", "packages/python/enten/tests"]
+pythonpath = ["packages/python/enten/src"]

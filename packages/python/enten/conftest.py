@@ -27,6 +27,7 @@ import pytest_asyncio
 try:
     import asyncpg  # noqa: F401
     import testcontainers.core.container as _tc_container  # noqa: F401
+
     _TESTCONTAINERS_AVAILABLE = True
 except ImportError:  # pragma: no cover - reachable only if extras not installed
     _TESTCONTAINERS_AVAILABLE = False

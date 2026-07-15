@@ -1,5 +1,0 @@
-Task 9 verification:
-- Files: packages/ts/app/src/routes/webhook.ts, packages/ts/app/src/server.ts, github-app.yml
-- Commit: pending
-- Tests: packages/ts/app/tests/webhook.test.ts, packages/ts/app/tests/server.test.ts
-- Status: PASS (all required deliverables present)

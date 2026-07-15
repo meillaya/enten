@@ -11,7 +11,15 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ToolUse(BaseModel):
+    """A tool call requested by the model."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
 
 
 class Message(BaseModel):
@@ -21,6 +29,7 @@ class Message(BaseModel):
     content: str | list[ContentPart]
     tool_call_id: str | None = None
     name: str | None = None
+    tool_calls: list[ToolUse] = Field(default_factory=list)
 
 
 class ContentPart(BaseModel):
@@ -37,14 +46,6 @@ class ToolSchema(BaseModel):
     name: str
     description: str
     parameters: dict[str, Any]
-
-
-class ToolUse(BaseModel):
-    """A tool call requested by the model."""
-
-    id: str
-    name: str
-    arguments: dict[str, Any]
 
 
 class Usage(BaseModel):
@@ -102,7 +103,7 @@ class LLMProvider(Protocol):
         """Issue a non-streaming completion request."""
         ...
 
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         tools: list[ToolSchema] | None = None,

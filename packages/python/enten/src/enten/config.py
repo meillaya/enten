@@ -55,8 +55,8 @@ class LLMProvider(str, Enum):
 class SandboxProvider(str, Enum):
     """Where agent-generated code actually runs.
 
-    ``docker`` uses a sibling container (default in dev). ``e2b``
-    uses the E2B cloud sandbox; it requires ``E2B_API_KEY``.
+    ``docker`` uses a sibling container (default in dev). ``e2b`` is reserved
+    but fails closed until an official SDK integration is approved.
     """
 
     DOCKER = "docker"
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
 
     All fields have defaults. Secrets default to ``None`` so the
     constructor never raises when an env var is absent; callers that
-    *require* a secret (e.g. the GitHub App bootstrap in T33) must
+    *require* a secret (such as the production worker) must
     check for ``None`` explicitly and fail with a domain-specific
     error message rather than a generic ``ValidationError``.
     """
@@ -93,8 +93,7 @@ class Settings(BaseSettings):
     # Filesystem path to the PEM private key downloaded from the App's
     # "Private keys" page. We never inline the key in env vars.
     github_app_private_key_path: Path | None = None
-    # Shared secret used to validate ``X-Hub-Signature-256`` on inbound
-    # webhooks (the TS edge in T09 does the same check).
+    # Shared secret used to validate ``X-Hub-Signature-256`` on inbound webhooks.
     github_webhook_secret: str | None = None
     # The ``committer_email`` we use when pushing fix branches so the
     # agent can self-ignore its own commits in cron/diff jobs.
@@ -102,11 +101,9 @@ class Settings(BaseSettings):
 
     # ── LLM provider ─────────────────────────────────────────────────────
     llm_provider: LLMProvider = LLMProvider.OPENAI_COMPAT
-    # Default chat model name sent on every request; per-task overrides
-    # live in the planner (T13), not here.
+    # Default chat model name sent on every request.
     llm_default_model: str = "gpt-4o-mini"
-    # Hard cap on ReAct-style iterations per task. T27's circuit
-    # breaker trips on this.
+    # Hard cap on ReAct-style iterations per task.
     llm_max_iterations: int = 15
     # OpenAI-compatible base URL; covers OpenAI, Together, vLLM, etc.
     llm_openai_base_url: str = "https://api.openai.com/v1"
@@ -128,23 +125,24 @@ class Settings(BaseSettings):
 
     # ── Sandbox provider ─────────────────────────────────────────────────
     sandbox_provider: SandboxProvider = SandboxProvider.DOCKER
+    sandbox_docker_image: str | None = None
     # Required when ``sandbox_provider == e2b``.
     e2b_api_key: str | None = None
+    verification_command: str = "python -m compileall -q ."
 
     # ── Database ─────────────────────────────────────────────────────────
-    # Async SQLAlchemy URL; T08 wires the Alembic migrations against
-    # this same DSN.
+    # Async SQLAlchemy URL; the checksum migration runner normalizes it at
+    # the asyncpg boundary.
     database_url: str = "postgresql+asyncpg://enten@localhost/enten"
 
     # ── Cost & diff guardrails ───────────────────────────────────────────
-    # Token budget for a single PR's diff; over-budget diffs are
-    # rejected before they hit the LLM (T15 budget guard).
+    # Token budget for a single PR's diff.
     max_pr_diff_tokens: int = 50000
-    # USD per-PR cap; enforced by the T13 budget tracker.
+    # USD per-PR cap enforced by the LLM client.
     per_pr_cost_cap_usd: float = 0.50
 
     # ── Observability ────────────────────────────────────────────────────
-    # OTLP gRPC endpoint for the OTel SDK (T05 wires the exporter).
+    # OTLP gRPC endpoint for the OTel SDK.
     otel_endpoint: str = "http://localhost:4317"
     # Port the Prometheus ``/metrics`` exposition listens on. The TS
     # edge uses ``METRICS_PORT`` (default 9091) to avoid clashing with

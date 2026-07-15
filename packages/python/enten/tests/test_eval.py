@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
 from enten.eval import EvalError, EvalReport, run_eval, write_baseline
+
+CHECKER = Path(__file__).resolve().parents[4] / "scripts" / "eval-threshold-check.py"
 
 
 def _make_fixture(
@@ -54,9 +58,7 @@ def _make_fixture(
         json.dumps({"kind": kind, "source": "synthetic"}), encoding="utf-8"
     )
     if stub_findings is not None:
-        (fixture_dir / "stub_findings.json").write_text(
-            json.dumps(stub_findings), encoding="utf-8"
-        )
+        (fixture_dir / "stub_findings.json").write_text(json.dumps(stub_findings), encoding="utf-8")
     return fixture_dir
 
 
@@ -109,6 +111,7 @@ async def test_run_eval_computes_metrics_and_baseline_diff(tmp_path: Path) -> No
         "security_sql",
         kind="security",
         expected_findings=[security_sql],
+        stub_findings=[security_sql],
     )
 
     # no_false_positive: 0 expected, bot returns 0 -> FPR 0
@@ -117,6 +120,7 @@ async def test_run_eval_computes_metrics_and_baseline_diff(tmp_path: Path) -> No
         "clean_refactor",
         kind="no_false_positive",
         expected_findings=[],
+        stub_findings=[],
     )
 
     report = await run_eval(str(corpus), stub_llm=True)
@@ -172,6 +176,7 @@ async def test_run_eval_determinism_check_is_byte_identical(tmp_path: Path) -> N
         "clean_refactor",
         kind="no_false_positive",
         expected_findings=[],
+        stub_findings=[],
     )
 
     report = await run_eval(str(corpus), stub_llm=True)
@@ -182,6 +187,7 @@ async def test_run_eval_determinism_check_is_byte_identical(tmp_path: Path) -> N
     assert first == second
     assert first["outcome"] == "pass"
     assert second["outcome"] == "pass"
+    assert first["summary"]["total"] == 1
 
 
 @pytest.mark.asyncio
@@ -192,3 +198,101 @@ async def test_run_eval_empty_corpus_raises_eval_error(tmp_path: Path) -> None:
 
     with pytest.raises(EvalError, match="corpus has 0 fixtures"):
         await run_eval(str(empty_corpus), stub_llm=True)
+
+
+@pytest.mark.asyncio
+async def test_stub_eval_requires_predictions_instead_of_using_gold(tmp_path: Path) -> None:
+    corpus = tmp_path / "corpus"
+    _make_fixture(
+        corpus,
+        "missing_prediction",
+        kind="bug",
+        expected_findings=[
+            {
+                "category": "bug",
+                "severity": "high",
+                "message": "Expected bug",
+                "file": "src/example.py",
+                "line": 1,
+            }
+        ],
+    )
+
+    with pytest.raises(EvalError, match="stub predictions not found"):
+        await run_eval(str(corpus), stub_llm=True)
+
+
+@pytest.mark.asyncio
+async def test_report_exposes_checker_aggregate_schema(tmp_path: Path) -> None:
+    corpus = tmp_path / "corpus"
+    finding = {
+        "category": "bug",
+        "severity": "high",
+        "message": "Expected bug",
+        "file": "src/example.py",
+        "line": 1,
+    }
+    _make_fixture(
+        corpus,
+        "predicted_bug",
+        kind="bug",
+        expected_findings=[finding],
+        stub_findings=[finding],
+    )
+
+    report = await run_eval(str(corpus), stub_llm=True)
+
+    dumped = report.model_dump()
+    assert dumped["aggregate"] == {
+        "precision": 1.0,
+        "recall": 1.0,
+        "false_positive_rate": 0.0,
+        "count": 1,
+        "n_correct": 1,
+        "n_missed": 0,
+        "n_hallucinated": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("report", "expected_exit"),
+    [
+        (
+            {
+                "aggregate": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "false_positive_rate": 0.0,
+                }
+            },
+            0,
+        ),
+        (
+            {
+                "aggregate": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "false_positive_rate": 1.0,
+                }
+            },
+            1,
+        ),
+        ({"by_kind": {}}, 2),
+    ],
+)
+def test_eval_threshold_checker_exit_contract(
+    tmp_path: Path,
+    report: dict[str, object],
+    expected_exit: int,
+) -> None:
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(CHECKER), str(report_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == expected_exit, result.stdout + result.stderr

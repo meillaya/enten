@@ -10,61 +10,91 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import signal
+import sys
 import time
-from typing import Any
+from collections.abc import Mapping
+from pathlib import Path
 
-import asyncpg
+from opentelemetry.trace import SpanKind
 
+from enten import _worker_runtime
+from enten._worker_runtime import (
+    bootstrap_worker,
+    configure_worker_observability,
+    install_shutdown_handlers,
+    worker_tracer,
+)
 from enten.config import Settings
 from enten.logging import bind_context, clear_context, configure_logging, get_logger
+from enten.pipeline import (
+    PipelineDependencies,
+    ReviewJobEnvelope,
+    execute_review,
+)
 from enten.queue import (
-    _get_pool,
     claim_next,
-    init_queue,
     mark_failed,
     mark_state,
 )
+from enten.queue.pool import get_queue_pool
+from enten.review.remote import (
+    CheckoutValidator,
+    FailClosedCheckoutValidator,
+    public_pull_request_checkout,
+)
+from enten.review.run import PipelineResult, ReviewRequest
+from enten.review.tracing import JobTraceError, extract_job_context
+from enten.worker_pipeline import (
+    QueueStageSink as QueueStageSink,
+)
+from enten.worker_pipeline import (
+    StaleJobLeaseError as StaleJobLeaseError,
+)
+from enten.worker_pipeline import (
+    build_pipeline_dependencies as build_pipeline_dependencies,
+)
 
-try:
-    from enten.otel import configure_otel as _configure_otel
-    from enten.otel import tracer as _tracer
-except Exception:  # pragma: no cover - T05 may not be present yet
-    _configure_otel = None
-
-    class _NoopTracer:
-        class _Span:
-            def __enter__(self) -> Any:
-                return self
-
-            def __exit__(self, *args: object) -> None:
-                return None
-
-            def set_attribute(self, *_args: object) -> None:
-                return None
-
-        def start_as_current_span(self, _name: str) -> _NoopTracer._Span:
-            return self._Span()
-
-    _tracer = _NoopTracer
-
+WorkerConfigurationError = _worker_runtime.WorkerConfigurationError
+build_production_github_client = _worker_runtime.build_production_github_client
+parse_verification_command = _worker_runtime.parse_verification_command
 
 PIPELINE_STATES = ["indexing", "reviewing", "testing", "verifying", "commenting", "done"]
+_get_pool = get_queue_pool
 
 
-async def run_pipeline(run_id: str) -> None:
-    """Stub pipeline that exercises the job state machine.
-
-    The real indexing/review/verify/post stages will replace this stub in
-    later tasks. For now we simply transition through every state with a
-    short sleep so tests can observe the progression.
-    """
-    logger = get_logger(__name__)
-    # ``claim_next`` already moved the job to ``indexing``.
-    for state in PIPELINE_STATES[1:]:
-        await mark_state(run_id, state)
-        logger.info("pipeline_state_transition", run_id=run_id, state=state)
-        await asyncio.sleep(0.1)
+async def run_pipeline(
+    run_id: str,
+    *,
+    payload: Mapping[str, object] | None = None,
+    dependencies: PipelineDependencies | None = None,
+    repository_path: Path | None = None,
+    checkout_validator: CheckoutValidator | None = None,
+    verification_command: tuple[str, ...] | None = None,
+) -> PipelineResult:
+    """Parse one job and delegate all execution to the shared stage machine."""
+    checkout = (repository_path or Path(".")).resolve()
+    if payload is None:
+        request = ReviewRequest(
+            repository_id=f"worker:{run_id}",
+            pr_number=0,
+            head_sha=run_id,
+            repository_path=checkout,
+            public_repository=True,
+            local_repository=True,
+            verification_command=(sys.executable, "-m", "compileall", "-q", "."),
+            correlation_run_id=run_id,
+        )
+    else:
+        envelope = ReviewJobEnvelope.model_validate(payload)
+        request = envelope.to_request(
+            repository_path=checkout,
+            correlation_run_id=run_id,
+            verification_command=verification_command,
+        )
+        validator = checkout_validator or FailClosedCheckoutValidator()
+        await validator.validate(request)
+    resolved_dependencies = dependencies or build_pipeline_dependencies(run_id)
+    return await execute_review(request, resolved_dependencies)
 
 
 async def clean_stale_jobs(threshold_minutes: int = 15) -> int:
@@ -104,20 +134,15 @@ async def main(poll_interval: int = 5) -> None:
     """Run the worker loop until SIGTERM/SIGINT.
 
     Initialization order matches the task spec: logging, OTel, settings,
-    queue pool. The loop then claims jobs, runs the pipeline stub, and
+    queue pool. The loop then claims jobs, runs the shared pipeline, and
     handles failures with bounded retries.
     """
     configure_logging()
-    if _configure_otel is not None:
-        _configure_otel()
+    configure_worker_observability()
 
     settings = Settings()
-    pool = await asyncpg.create_pool(
-        settings.database_url,
-        min_size=1,
-        max_size=4,
-    )
-    init_queue(pool)
+    runtime = await bootstrap_worker(settings)
+    pool = runtime.pool
 
     logger = get_logger(__name__)
     worker_id = f"worker-{os.getpid()}"
@@ -127,18 +152,7 @@ async def main(poll_interval: int = 5) -> None:
     last_clean = time.monotonic()
 
     shutdown_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-
-    def _on_signal(sig_name: str) -> None:
-        logger.info("shutdown_signal_received", signal=sig_name, worker_id=worker_id)
-        shutdown_event.set()
-
-    try:
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, _on_signal, sig.name)
-    except (ValueError, NotImplementedError):
-        # Signals are unavailable on Windows or in some test runners.
-        pass
+    install_shutdown_handlers(shutdown_event, logger, worker_id)
 
     try:
         while not shutdown_event.is_set():
@@ -159,9 +173,39 @@ async def main(poll_interval: int = 5) -> None:
             run_id = job["run_id"]
             bind_context(run_id=run_id, worker_id=worker_id)
             try:
-                with _tracer().start_as_current_span("pr_review") as span:
+                envelope = ReviewJobEnvelope.model_validate(job["payload"])
+                expected_trace_id = job["trace_id"]
+                if not isinstance(expected_trace_id, str):
+                    raise JobTraceError("claimed job is missing its authenticated trace id")
+                parent = extract_job_context(
+                    traceparent=envelope.traceparent,
+                    tracestate=envelope.tracestate,
+                    expected_trace_id=expected_trace_id,
+                )
+                with worker_tracer().start_as_current_span(
+                    "pr_review.consume",
+                    context=parent,
+                    kind=SpanKind.CONSUMER,
+                ) as span:
                     span.set_attribute("run_id", run_id)
-                    await run_pipeline(run_id)
+                    async with public_pull_request_checkout(
+                        repository_full_name=envelope.repository.full_name,
+                        pr_number=envelope.pull_request.number,
+                        head_sha=envelope.pull_request.head_sha,
+                    ) as repository_path:
+                        await run_pipeline(
+                            run_id,
+                            payload=job["payload"],
+                            dependencies=build_pipeline_dependencies(
+                                run_id,
+                                github_client=runtime.github_client,
+                                generation=job["generation"],
+                                verifier=runtime.remote_verifier,
+                            ),
+                            repository_path=repository_path,
+                            checkout_validator=runtime.checkout_validator,
+                            verification_command=runtime.verification_command,
+                        )
                 logger.info("job_completed", run_id=run_id, worker_id=worker_id)
             except Exception as exc:
                 logger.exception(
@@ -171,9 +215,14 @@ async def main(poll_interval: int = 5) -> None:
                     worker_id=worker_id,
                 )
                 if job["attempts"] < 3:
-                    await mark_failed(run_id, str(exc), retry=True)
+                    await mark_failed(
+                        run_id,
+                        str(exc),
+                        retry=True,
+                        generation=job["generation"],
+                    )
                 else:
-                    await mark_state(run_id, "failed")
+                    await mark_state(run_id, "failed", generation=job["generation"])
             finally:
                 clear_context()
 
@@ -181,5 +230,6 @@ async def main(poll_interval: int = 5) -> None:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(shutdown_event.wait(), timeout=1)
     finally:
+        await runtime.github_client.close()
         await pool.close()
         logger.info("worker_stopped", worker_id=worker_id)

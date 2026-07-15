@@ -1,5 +1,0 @@
-Task 12 verification:
-- Files: docs/architecture.md, packages/python/enten/src/enten/llm/client.py
-- Commit: pending
-- Tests: N/A
-- Status: PASS (all required deliverables present)

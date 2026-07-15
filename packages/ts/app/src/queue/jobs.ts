@@ -1,72 +1,124 @@
-/**
- * Thin SQL abstraction for enqueueing jobs from the webhook receiver.
- *
- * T10 will replace this with a full queue implementation. For now it
- * only exposes `enqueue(payload)` which inserts a `queued` row into the
- * `jobs` table with an idempotency key and returns the generated run_id.
- */
-
 import { createHash } from "node:crypto";
 import postgres from "postgres";
+import { z } from "zod";
 
 import { newRunId } from "../logging.js";
 
-export interface WebhookPayload {
-  delivery: string;
-  event: string;
-  repository?: { full_name?: string };
-  pull_request?: { number?: number; head?: { sha?: string } };
-  [key: string]: unknown;
+export const SUPPORTED_PULL_REQUEST_ACTIONS = [
+  "opened",
+  "reopened",
+  "synchronize",
+  "ready_for_review",
+] as const;
+
+const TraceparentSchema = z
+  .string()
+  .regex(
+    /^(?!ff)[0-9a-f]{2}-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$/,
+  );
+
+export const PrJobEnvelopeSchema = z
+  .object({
+    version: z.literal("1"),
+    installation_id: z.number().int().positive(),
+    delivery_id: z.string().uuid(),
+    repository: z
+      .object({
+        id: z.number().int().positive(),
+        full_name: z.string().regex(/^[^/\s]+\/[^/\s]+$/),
+      })
+      .strict(),
+    pull_request: z
+      .object({
+        number: z.number().int().positive(),
+        head_sha: z.string().regex(/^[0-9a-f]{40,64}$/),
+      })
+      .strict(),
+    action: z.enum(SUPPORTED_PULL_REQUEST_ACTIONS),
+    actor: z
+      .object({
+        id: z.number().int().positive(),
+        login: z.string().min(1),
+      })
+      .strict(),
+    traceparent: TraceparentSchema,
+    tracestate: z.string().min(1).max(512).optional(),
+  })
+  .strict();
+
+export type PrJobEnvelope = z.infer<typeof PrJobEnvelopeSchema>;
+
+export type EnqueueResult = {
+  readonly runId: string;
+  readonly idempotencyKey: string;
+  readonly inserted: boolean;
+};
+
+export interface JobEnqueuer {
+  enqueue(envelope: PrJobEnvelope): Promise<EnqueueResult>;
 }
 
-export interface EnqueueResult {
-  runId: string;
-  idempotencyKey: string;
-  inserted: boolean;
+export function computeIdempotencyKey(envelope: PrJobEnvelope): string {
+  const identity = [
+    envelope.repository.full_name,
+    envelope.pull_request.number,
+    envelope.pull_request.head_sha,
+  ].join("|");
+  return createHash("sha256").update(identity).digest("hex");
 }
 
-export function computeIdempotencyKey(payload: WebhookPayload): string {
-  const repo = payload.repository?.full_name ?? "";
-  const prNumber = payload.pull_request?.number ?? 0;
-  const headSha = payload.pull_request?.head?.sha ?? "";
-  const raw = `${payload.delivery}|${repo}|${prNumber}|${headSha}`;
-  return createHash("sha256").update(raw).digest("hex");
+type PersistedJob = {
+  readonly run_id: string;
+  readonly idempotency_key: string;
+  readonly inserted: boolean;
+};
+
+export class EnqueueInvariantError extends Error {
+  override readonly name = "EnqueueInvariantError";
+
+  constructor(readonly idempotencyKey: string) {
+    super(`enqueue returned no row for ${idempotencyKey}`);
+  }
 }
 
-export interface JobsQueueOptions {
-  sql: postgres.Sql;
-}
-
-export class JobsQueue {
+export class JobsQueue implements JobEnqueuer {
   constructor(private readonly sql: postgres.Sql) {}
 
-  async enqueue(payload: WebhookPayload): Promise<EnqueueResult> {
-    const runId = newRunId();
-    const idempotencyKey = computeIdempotencyKey(payload);
-    const kind = payload.event;
+  async enqueue(envelope: PrJobEnvelope): Promise<EnqueueResult> {
+    const candidateRunId = newRunId();
+    const idempotencyKey = computeIdempotencyKey(envelope);
+    const traceId = envelope.traceparent.slice(3, 35);
 
-    const result = await this.sql<{ run_id: string; idempotency_key: string }[]>`
+    const rows = await this.sql<PersistedJob[]>`
       INSERT INTO jobs (run_id, kind, state, idempotency_key, trace_id, payload)
       VALUES (
-        ${runId},
-        ${kind},
+        ${candidateRunId},
+        'pull_request',
         'queued',
         ${idempotencyKey},
-        NULL,
-        ${this.sql.json(payload as never)}
+        ${traceId},
+        ${this.sql.json(envelope)}
       )
-      ON CONFLICT (idempotency_key) DO NOTHING
-      RETURNING run_id, idempotency_key
+      ON CONFLICT (idempotency_key) DO UPDATE
+      SET idempotency_key = EXCLUDED.idempotency_key
+      RETURNING run_id, idempotency_key, (xmax = 0) AS inserted
     `;
 
+    const persisted = rows[0];
+    if (persisted === undefined) {
+      throw new EnqueueInvariantError(idempotencyKey);
+    }
+
     return {
-      runId,
-      idempotencyKey,
-      inserted: result.length > 0,
+      runId: persisted.run_id,
+      idempotencyKey: persisted.idempotency_key,
+      inserted: persisted.inserted,
     };
   }
 }
 
-export function createJobsQueue(options: JobsQueueOptions): JobsQueue {
+export function createJobsQueue(options: {
+  readonly sql: postgres.Sql;
+}): JobEnqueuer {
   return new JobsQueue(options.sql);
 }

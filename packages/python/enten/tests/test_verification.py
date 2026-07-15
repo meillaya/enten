@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,6 +10,7 @@ import pytest
 
 from enten.sandbox.models import ExecResult
 from enten.verification import VerificationResult, verify
+from enten.verification.flaky import SandboxHandle
 
 
 class FakeHandle:
@@ -57,61 +57,47 @@ class FakeSandboxFactory:
         self.handles = handles
         self._index = 0
 
-    async def create(self) -> FakeHandle:
+    async def create(self, repo_files: dict[str, str]) -> FakeHandle:
+        _ = repo_files
         handle = self.handles[self._index]
         self._index += 1
         return handle
 
+    async def destroy(self, handle: SandboxHandle) -> None:
+        _ = handle
+
+    async def run(
+        self,
+        handle: SandboxHandle,
+        cmd: list[str],
+        timeout_seconds: int = 120,
+    ) -> ExecResult:
+        matching = next(item for item in self.handles if item.id == handle.id)
+        return await matching.run(cmd, timeout_seconds=timeout_seconds)
+
+    async def upload(
+        self,
+        handle: SandboxHandle,
+        files: dict[str, str | bytes],
+    ) -> None:
+        matching = next(item for item in self.handles if item.id == handle.id)
+        await matching.upload(files)
+
 
 def _passing_report() -> str:
-    return json.dumps(
-        {
-            "summary": {
-                "passed": 1,
-                "failed": 0,
-                "skipped": 0,
-                "error": 0,
-                "total": 1,
-                "duration": 0.1,
-            },
-            "tests": [
-                {
-                    "nodeid": "test_demo.py::test_one",
-                    "outcome": "passed",
-                    "duration": 0.1,
-                    "lineno": 1,
-                }
-            ],
-        }
+    return (
+        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0" time="0.1">'
+        '<testcase name="test_one" file="test_demo.py" line="0" time="0.1" />'
+        "</testsuite></testsuites>"
     )
 
 
 def _failing_report() -> str:
-    return json.dumps(
-        {
-            "summary": {
-                "passed": 0,
-                "failed": 1,
-                "skipped": 0,
-                "error": 0,
-                "total": 1,
-                "duration": 0.1,
-            },
-            "tests": [
-                {
-                    "nodeid": "test_demo.py::test_one",
-                    "outcome": "failed",
-                    "duration": 0.1,
-                    "lineno": 1,
-                    "call": {
-                        "outcome": "failed",
-                        "longrepr": {
-                            "reprcrash": {"message": "assert 1 == 2"}
-                        },
-                    },
-                }
-            ],
-        }
+    return (
+        '<testsuites><testsuite tests="1" failures="1" errors="0" skipped="0" time="0.1">'
+        '<testcase name="test_one" file="test_demo.py" line="0" time="0.1">'
+        '<failure message="assert 1 == 2">details</failure></testcase>'
+        "</testsuite></testsuites>"
     )
 
 
@@ -189,14 +175,31 @@ async def test_verify_reports_fail_on_pytest_failure(
     assert not result.flaky
 
 
+async def test_verify_treats_command_exit_as_authoritative_over_passing_report(
+    tmp_path: Path,
+    deterministic_time: Any,
+) -> None:
+    report = _passing_report()
+    factory = FakeSandboxFactory([FakeHandle(f"sbx-{i}", report, 2) for i in range(3)])
+
+    result = await verify(
+        "run-command-failed",
+        sandbox_factory=factory,
+        repo_path=str(tmp_path),
+        language="python",
+        target_selector=".",
+    )
+
+    assert result.outcome == "fail"
+    assert result.exit_codes == [2, 2, 2]
+
+
 async def test_verify_reports_error_on_bogus_target(
     tmp_path: Path,
     deterministic_time: Any,
 ) -> None:
     """A target that cannot be parsed produces an ``error`` verdict."""
-    factory = FakeSandboxFactory(
-        [FakeHandle(f"sbx-{i}", "not valid json", 5) for i in range(3)]
-    )
+    factory = FakeSandboxFactory([FakeHandle(f"sbx-{i}", "not valid json", 5) for i in range(3)])
 
     result = await verify(
         "run-error",
@@ -211,12 +214,7 @@ async def test_verify_reports_error_on_bogus_target(
 
 def test_verify_module_contains_no_llm_calls() -> None:
     """The arbiter must never invoke an LLM completion or stream method."""
-    verification_root = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "enten"
-        / "verification"
-    )
+    verification_root = Path(__file__).resolve().parents[1] / "src" / "enten" / "verification"
     proc = subprocess.run(
         ["grep", "-rnE", r"(\.complete\(|\.stream\()", str(verification_root)],
         capture_output=True,

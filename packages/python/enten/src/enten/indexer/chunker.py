@@ -21,21 +21,23 @@ from enten.logging import get_logger
 logger = get_logger(__name__)
 
 MAX_LINES = 100_000
-BINARY_EXTENSIONS = frozenset({
-    ".pyc",
-    ".pyo",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".bmp",
-    ".ico",
-    ".exe",
-    ".dll",
-    ".so",
-    ".dylib",
-    ".bin",
-})
+BINARY_EXTENSIONS = frozenset(
+    {
+        ".pyc",
+        ".pyo",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".bin",
+    }
+)
 
 Lang = Literal["python", "typescript"]
 
@@ -235,15 +237,17 @@ def _make_chunk(
     )
 
 
-_DEFINITION_TYPES = frozenset({
-    "function_definition",
-    "class_definition",
-    "function_declaration",
-    "class_declaration",
-    "method_definition",
-    "export_statement",
-    "lexical_declaration",
-})
+_DEFINITION_TYPES = frozenset(
+    {
+        "function_definition",
+        "class_definition",
+        "function_declaration",
+        "class_declaration",
+        "method_definition",
+        "export_statement",
+        "lexical_declaration",
+    }
+)
 
 
 def _collect_symbols(
@@ -346,8 +350,7 @@ def _is_ts_chunkable(node: Node) -> bool:
             (
                 c
                 for c in node.children
-                if c.type
-                in ("class_declaration", "function_declaration", "lexical_declaration")
+                if c.type in ("class_declaration", "function_declaration", "lexical_declaration")
             ),
             None,
         )

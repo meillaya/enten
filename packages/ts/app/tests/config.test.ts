@@ -43,6 +43,7 @@ describe("config.parse", () => {
       expect(result.value.PORT).toBe("3000");
       expect(result.value.OTEL_ENDPOINT).toBe("http://localhost:4317");
       expect(result.value.METRICS_PORT).toBe("9091");
+      expect(result.value.GITHUB_APP_SLUG).toBe("enten-bot");
     }
   });
 

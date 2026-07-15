@@ -1,5 +1,0 @@
-Task 33 verification:
-- Files: github-app.yml, packages/python/enten/src/enten/github/auth.py
-- Commit: pending
-- Tests: N/A
-- Status: PASS (all required deliverables present)

@@ -1,5 +1,0 @@
-Task 37 verification:
-- Files: packages/python/enten/src/enten/eval/__init__.py, packages/python/enten/src/enten/cli.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_eval.py, packages/python/enten/tests/test_f1_coverage.py
-- Status: PASS (all required deliverables present)

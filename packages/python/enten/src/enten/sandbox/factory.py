@@ -10,14 +10,15 @@ from .protocol import SandboxProvider
 
 def get_provider(settings: Settings) -> SandboxProvider:
     """Return a configured sandbox provider instance."""
-    # Local imports avoid heavy SDK imports at module load time and keep the
-    # provider implementations optional (E2B is not implemented until T39).
     if settings.sandbox_provider == SandboxProviderEnum.DOCKER:
         from enten.sandbox.docker import DockerSandbox
 
-        return DockerSandbox()
+        return DockerSandbox(image=settings.sandbox_docker_image)
     if settings.sandbox_provider == SandboxProviderEnum.E2B:
-        from enten.sandbox.e2b import E2BSandbox
+        from enten.sandbox.e2b import SandboxProviderUnavailableError
 
-        return E2BSandbox(settings)
+        raise SandboxProviderUnavailableError(
+            provider="E2B",
+            action="Select the Docker sandbox provider instead.",
+        )
     raise ValueError(f"Unsupported sandbox provider: {settings.sandbox_provider}")

@@ -1,0 +1,9 @@
+[
+  {
+    "category": "missing_test",
+    "severity": "medium",
+    "file": "src/stats.py",
+    "line": 2,
+    "message": "The new empty-list guard is behavior that should be covered by an explicit unit test."
+  }
+]

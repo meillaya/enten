@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Roll back the initial migration by dropping all tables in reverse order.
+: "${DATABASE_URL:=postgresql+asyncpg://enten:enten@localhost:${POSTGRES_HOST_PORT:-5432}/enten}"
+: "${1:?usage: scripts/db-rollback.sh TARGET_VERSION}"
 
-docker compose exec -T postgres psql -U enten -d enten -c "
-DROP TABLE IF EXISTS sandbox_runs CASCADE;
-DROP TABLE IF EXISTS fixtures CASCADE;
-DROP TABLE IF EXISTS llm_calls CASCADE;
-DROP TABLE IF EXISTS pr_reviews CASCADE;
-DROP TABLE IF EXISTS jobs CASCADE;
-"
+uv run --project packages/python/enten python -m enten.migrations \
+    --database-url "$DATABASE_URL" \
+    --migrations migrations \
+    downgrade --target-version "$1"

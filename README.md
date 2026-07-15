@@ -1,88 +1,151 @@
-# enten — GitHub-integrated AI engineering agent with deterministic verification
+# enten — deterministic pull-request review infrastructure
 
-> Ship safer patches by proving every change in a sandbox before a human reviews it.
+> Authenticate GitHub pull requests, run a trusted verifier in a hardened sandbox, and report an exit-code-derived verdict without repository write access.
 
-[![CI](https://github.com/<owner>/enten/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/enten/actions/workflows/ci.yml)
-[![Eval Smoke](https://github.com/<owner>/enten/actions/workflows/ci.yml/badge.svg?job=python-eval-smoke)](https://github.com/<owner>/enten/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/<owner>/enten)](LICENSE)
+[![CI](https://github.com/Meillaya/enten/actions/workflows/ci.yml/badge.svg)](https://github.com/Meillaya/enten/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Meillaya/enten)](LICENSE)
 
-`enten` is an AI engineering agent that lives on your Git repositories. It ingests pull requests, plans changes, runs tools, executes tests in an isolated sandbox, and ships verified patches back as PR comments. This monorepo contains the Python reasoning core, the TypeScript webhook/API edge, the Postgres-backed job queue, and a deterministic evaluation harness.
+`enten` is a self-hosted GitHub App and local CLI for evidence-grounded pull-request review. The TypeScript edge authenticates a narrow set of GitHub events, Postgres provides the durable queue and crash-fenced checkpoints, and the Python worker verifies an exact public PR head in Docker. GitHub Checks and PR comments are external effects with durable attempt receipts, so an ambiguous write is never blindly repeated.
+
+The release pipeline deliberately keeps the verdict deterministic: findings may be heuristic or model-assisted, but only the configured verifier process exit code decides pass or fail. The shipped worker uses the bounded local findings generator; OpenAI-compatible and Ollama provider libraries plus the independent eval harness are included, but production LLM review is not enabled implicitly.
 
 ## Quickstart
 
+Run the local pipeline without GitHub credentials:
+
 ```bash
-git clone https://github.com/<owner>/enten.git
+git clone https://github.com/Meillaya/enten.git
 cd enten
-make install          # uv sync + pnpm install
-docker compose up -d  # Postgres + Jaeger
-make dev              # TS edge + Python worker
-gh repo fork httpie/cli --clone=false --remote=true
-# Open a PR against your fork and watch enten review it.
+make install
+uv run enten review --repo . --verify-command "python -m compileall -q ."
+make eval
 ```
 
-Run `make help` to see every target.
+Run the complete release gate:
 
-## What's in this repo
+```bash
+make check
+```
 
-```
-enten/
-├── packages/python/enten/   # Python agent core
-├── packages/ts/app/         # TypeScript webhook/API edge
-├── docs/                    # Architecture + ADRs
-├── scripts/                 # Dev/migration helpers
-├── tests/                   # Cross-language tests
-├── docker-compose.yml       # Local data stores
-└── Makefile                 # Cross-language orchestration
-```
+The local command writes replayable state to `.enten/reviews.json`, never posts to GitHub, and accepts an argv-only verification command (no shell expansion).
 
 ## Architecture
 
-For the high-level design, component diagram, job state machine, and determinism boundary, see [`docs/architecture.md`](docs/architecture.md). The ADRs in [`docs/decisions/`](docs/decisions/) record why we chose the monorepo layout, the hybrid language stack, Postgres as the queue, pgvector for retrieval, Docker + E2B sandboxes, and more.
+```text
+GitHub pull_request
+        │ signed request
+        ▼
+TypeScript/Hono edge ── authenticated W3C carrier ──► Postgres job queue
+                                                        │ fenced claim
+                                                        ▼
+                                                Python worker
+                                             ┌──────────┼──────────┐
+                                             │          │          │
+                                      public SHA   Docker verifier  durable report
+                                      checkout     (exit arbiter)   receipts
+                                             │          │          │
+                                             └──────────┴──────► GitHub Check/comment
+```
+
+Key boundaries:
+
+- **Ingress:** only `pull_request` actions `opened`, `reopened`, `synchronize`, and non-draft `ready_for_review`; unsupported events are acknowledged and ignored.
+- **Repository:** public GitHub repositories only. The worker fetches the exact `refs/pull/<n>/head`, disables credential helpers, validates the canonical origin and head SHA, and removes the temporary checkout.
+- **Persistence:** checksum-verified SQL migrations, leased queue generations, compare-and-swap stage checkpoints, and durable external-effect states (`prepared`, `attempted`, `succeeded`, `indeterminate`).
+- **Verification:** Docker is the only verified backend. Containers use a read-only root filesystem, tmpfs workspace, no network, no capabilities, a non-root user, and bounded CPU, memory, PID, and time limits.
+- **Authority:** the GitHub App can read pull requests and write PR comments/check runs. It cannot write repository contents, Actions, or issues.
+- **Tracing:** the public `traceparent` is discarded. The authenticated edge creates the trusted producer context; the worker verifies and continues that carrier.
+
+See [the architecture guide](docs/architecture.md), [permission contract](docs/permissions.md), and [ADRs](docs/decisions/).
 
 ## Why this exists
 
-- **Determinism boundary.** LLMs are great proposers and terrible arbiters. `enten` separates the creative step (plan/patch generation) from the verdict step (sandbox execution with exit-code and output comparison). The same input must produce the same result every time.
-- **Eval harness first.** Every change is validated against a fixture corpus with known expected findings. Precision, recall, false-positive rate, and determinism are measured before a feature ships.
-- **Cost tracking by default.** Every LLM call is logged with model, tokens, and price. A configurable cap prevents runaway spend.
+- **A verifier should arbitrate.** Model output can propose a finding, test, or patch, but it cannot declare its own work correct.
+- **Crash safety matters at API boundaries.** A timeout after a GitHub POST is ambiguous. Retrying it can duplicate a check or comment, so `enten` records attempts before the network call and stops on ambiguity.
+- **Untrusted PRs need a small boundary.** The release refuses private checkouts, arbitrary webhook commands, host-shell expansion, unsafe paths, symlinks, submodules, secrets, and networked verifier containers.
+- **Quality claims need independent inputs.** Stub findings are separate from expected eval labels; missing predictions, zero collected tests, malformed reports, and unavailable scanners fail closed.
 
 ## How it works
 
-1. **Ingest.** GitHub delivers `pull_request` and `issue_comment` events to the Hono webhook receiver (`packages/ts/app/src/routes/webhook.ts`). Signature verification and idempotency checks happen here, and the event is enqueued as a row in Postgres.
-2. **Dispatch.** The Python worker (`packages/python/enten/src/enten/worker.py`) claims the next queued job with `SELECT ... FOR UPDATE SKIP LOCKED`, then moves it through a deterministic state machine.
-3. **Plan & patch.** The review generator (`packages/python/enten/src/enten/review/generator.py`) reads the PR diff, repository context, and tool outputs, then proposes a patch using a provider-agnostic LLM client (`packages/python/enten/src/enten/llm/client.py`).
-4. **Verify.** The verification engine (`packages/python/enten/src/enten/verification/verify.py`) applies the patch inside a sandbox and runs the project's test command. The sandbox provider (`packages/python/enten/src/enten/sandbox/docker.py` or `e2b.py`) returns exit code, stdout, and stderr; the exit code is the arbiter.
-5. **Report.** The reporter (`packages/python/enten/src/enten/reporting/comment.py`) posts a structured PR comment with findings, verification status, and cost. Metrics and traces flow to Prometheus and Jaeger.
+1. The Hono edge validates required headers and content type before reading a size-limited raw body, verifies the SHA-256 HMAC, validates the strict versioned job contract, and atomically enqueues it.
+2. The worker claims a job with a generation and lease, validates the authenticated trace carrier, and fetches the exact public PR ref into a mode-0700 temporary checkout.
+3. The shared stage machine discovers bounded source evidence, generates anchored findings, runs the trusted verification command in the selected immutable Docker image, and persists each stage.
+4. The exit-code arbiter emits `pass`, `flaky`, `fail`, or `error`. Findings cannot override that verdict.
+5. A fenced reporter records the check attempt before calling GitHub, persists the receipt, then does the same for the PR comment. Any uncertain outcome becomes terminal `indeterminate` for operator reconciliation.
 
 ## Try it locally
 
+### Infrastructure only
+
 ```bash
-# 1. Start the data stores
-docker compose up -d postgres jaeger
-
-# 2. Apply the database schema
+scripts/dev-up.sh --infra-only
 ./scripts/db-migrate.sh
-
-# 3. Start the worker and webhook edge
-make dev
-
-# 4. In another terminal, run the eval smoke against stubbed LLMs
-uv run enten eval --corpus tests/fixtures/prs/smoke --stub-llm
-
-# 5. Inspect traces
-open http://localhost:16686
+scripts/dev-down.sh
 ```
 
-## How to extend
+This starts loopback-bound Postgres/pgvector and Jaeger without requiring GitHub credentials.
 
-- **Swap the LLM provider.** Implement the protocol in `packages/python/enten/src/enten/llm/client.py` and set `LLM_PROVIDER` in `.env`. The rest of the agent stays unchanged.
-- **Swap the sandbox.** Add a new provider under `packages/python/enten/src/enten/sandbox/` that implements `SandboxProvider` (`packages/python/enten/src/enten/sandbox/protocol.py`). Existing verification code uses the protocol, not the implementation.
+### Full GitHub App stack
 
-## Development prerequisites
+1. Create a GitHub App from `packages/ts/app/github-app.yml` and install it on a **public test repository**.
+2. Copy `.env.example` to `.env`; replace `GITHUB_APP_ID`, `GITHUB_WEBHOOK_SECRET`, and `GITHUB_APP_PRIVATE_KEY_PATH` with real values.
+3. Select a trusted verifier image and command. The default `python -m compileall -q .` is a syntax smoke check, not a project test suite.
+4. Start the stack:
 
-- Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- Node.js 22 and [pnpm 11.10.0](https://pnpm.io/)
-- Docker Compose
-- A GitHub App with webhook secret (see `github-app.yml`)
+```bash
+scripts/dev-up.sh
+curl --fail http://127.0.0.1:3000/health
+open http://127.0.0.1:16686
+```
+
+For the pinned HTTPie demonstration image:
+
+```bash
+docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
+# in .env:
+# SANDBOX_DOCKER_IMAGE=enten-verifier-httpie:3.2.4
+# VERIFICATION_COMMAND=python /opt/verifier/verify.py
+```
+
+The self-hosted worker needs access to `/var/run/docker.sock`; `scripts/dev-up.sh` supplies the socket group ID and rejects missing credentials or a non-file private-key path. Treat Docker socket access as host-level authority and dedicate the worker host accordingly.
+
+## Supported and deferred surfaces
+
+| Surface | Release status |
+|---|---|
+| Local CLI review/cost/eval | Verified |
+| Signed GitHub PR ingress and Postgres queue | Verified |
+| Public exact-SHA checkout | Verified with local/stub Git remotes; live GitHub requires App setup |
+| Docker verifier | Verified |
+| GitHub check/comment reporter | Contract-tested; live posting requires GitHub credentials |
+| OpenAI-compatible and Ollama clients | Unit/eval tested; not wired into the default worker generator |
+| E2B | Fails closed; no supported SDK integration in this release |
+| Fly.io/Railway files | Topology templates only; hosted Docker-socket verification is not validated |
+| Private repositories, dashboard, multi-tenant auth | Out of scope |
+
+## Development
+
+The hermetic developer shell is declared by `devenv.nix` (Python 3.12, Node 22, pnpm, uv, PostgreSQL/pgvector, scanners, and Docker tooling).
+
+```bash
+devenv test
+make help
+make test
+make coverage
+make security
+```
+
+No new dependency family is required for the release gates. Ruff is invoked as a pinned standalone tool; TypeScript uses real `tsc`, build, Vitest, and coverage gates rather than placeholder lint scripts.
+
+## Operations and security
+
+- [Deployment templates and limitations](docs/deploy.md)
+- [Runbook](docs/runbook.md)
+- [Maintainer response policy](docs/oncall.md)
+- [Demo contract](docs/demo-repo.md)
+- [GitHub permissions](docs/permissions.md)
+
+Do not run global Docker prune commands on shared hosts. Cleanup by Compose project, sandbox label, exact container ID, or test-session label only.
 
 ## License
 

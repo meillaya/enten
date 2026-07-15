@@ -8,7 +8,7 @@ import pytest
 
 from enten.llm.client import AgentLoopSpec
 from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse, Usage
-from enten.sandbox.models import ExecResult
+from enten.sandbox.models import ExecResult, SandboxHandle
 from enten.test_gen import (
     GeneratedTests,
     GenerationError,
@@ -67,46 +67,48 @@ class FakeLLMClient:
         )
 
 
-class FakeHandle:
-    """Handle returned by :class:`FakeSandbox`."""
-
-    provider: FakeSandbox
-    repo_files: dict[str, str]
-
-    def __init__(self, provider: FakeSandbox, repo_files: dict[str, str]) -> None:
-        self.provider = provider
-        self.repo_files = repo_files
-
-    async def run(self, cmd: list[str], timeout_seconds: int = 120) -> ExecResult:
-        _ = timeout_seconds
-        self.provider.calls.append(cmd)
-        key = " ".join(cmd)
-        return self.provider.results.get(
-            key,
-            ExecResult(exit_code=0, stdout="", stderr="", duration_ms=0),
-        )
-
-    async def upload(self, files: dict[str, str | bytes]) -> None:
-        self.provider.uploaded.update(files)
-
-    async def destroy(self) -> None:
-        pass
-
-
 class FakeSandbox:
     """In-memory sandbox provider matching :class:`SandboxProvider`."""
 
     results: dict[str, ExecResult]
     calls: list[list[str]]
     uploaded: dict[str, str | bytes]
+    repo_files: dict[str, str]
 
     def __init__(self, results: dict[str, ExecResult]) -> None:
         self.results = results
         self.calls = []
         self.uploaded = {}
+        self.repo_files = {}
 
-    async def create(self, repo_files: dict[str, str]) -> FakeHandle:
-        return FakeHandle(self, repo_files)
+    async def create(self, repo_files: dict[str, str]) -> SandboxHandle:
+        self.repo_files = repo_files
+        return SandboxHandle(id="fake", provider="fake", image="fake")
+
+    async def run(
+        self,
+        handle: SandboxHandle,
+        cmd: list[str],
+        timeout_seconds: int = 120,
+    ) -> ExecResult:
+        _ = handle, timeout_seconds
+        self.calls.append(cmd)
+        key = " ".join(cmd)
+        return self.results.get(
+            key,
+            ExecResult(exit_code=0, stdout="", stderr="", duration_ms=0),
+        )
+
+    async def upload(
+        self,
+        handle: SandboxHandle,
+        files: dict[str, str | bytes],
+    ) -> None:
+        _ = handle
+        self.uploaded.update(files)
+
+    async def destroy(self, handle: SandboxHandle) -> None:
+        _ = handle
 
 
 def _tool(file_path: str, content: str, rationale: str = "covers behavior") -> ToolUse:
@@ -222,6 +224,23 @@ async def test_size_cap_raises_generation_error() -> None:
     llm_client = FakeLLMClient([_tool("tests/test_huge.py", huge_content)])
 
     with pytest.raises(GenerationError, match="exceed"):
+        _ = await generate_tests(
+            ReviewDraft(content="def add(a, b): return a + b"),
+            retrieved_chunks=[],
+            language="python",
+            llm_client=llm_client,
+            sandbox=sandbox,
+        )
+
+
+@pytest.mark.asyncio
+async def test_generated_test_path_rejects_parent_escape() -> None:
+    sandbox = FakeSandbox(
+        {"pytest --collect-only -q .": ExecResult(exit_code=0, stdout="", stderr="", duration_ms=0)}
+    )
+    llm_client = FakeLLMClient([_tool("../escaped_test.py", VALID_PY_TEST)])
+
+    with pytest.raises(GenerationError, match="relative"):
         _ = await generate_tests(
             ReviewDraft(content="def add(a, b): return a + b"),
             retrieved_chunks=[],

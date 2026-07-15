@@ -1,5 +1,0 @@
-Task 36 verification:
-- Files: tests/fixtures/prs, packages/python/enten/tests/test_fixture_corpus.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_fixture_corpus.py
-- Status: PASS (all required deliverables present)

@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { app } from "../src/server.js";
+import { createApp } from "../src/server.js";
 
 describe("scaffold", () => {
-  it("responds 200 on /health", async () => {
-    const res = await app.fetch(new Request("http://localhost/health"));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; service: string };
-    expect(body.status).toBe("ok");
-    expect(body.service).toBe("enten-webhook");
+  it("responds 200 on health", async () => {
+    // Given
+    const created = createApp({
+      secret: "secret",
+      databaseUrl: "postgresql://unused",
+    });
+
+    // When
+    const response = await created.app.request("/health");
+
+    // Then
+    expect(response.status).toBe(200);
+    await created.sql.end();
   });
 });

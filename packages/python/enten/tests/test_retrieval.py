@@ -10,7 +10,7 @@ import pytest
 import tiktoken
 from testcontainers.postgres import PostgresContainer
 
-from enten.retrieval import EmbeddingProvider, retrieve
+from enten.retrieval import EmbeddingProvider, RetrievedChunk, _select_within_budget, retrieve
 
 REPO_ROOT = Path(__file__).parents[4]
 MIGRATION = REPO_ROOT / "migrations" / "0002_pgvector.sql"
@@ -31,12 +31,8 @@ def _content_hash(text: str) -> str:
 
 async def _apply_migration(dsn: str) -> None:
     raw = MIGRATION.read_text(encoding="utf-8")
-    cleaned = "\n".join(
-        line for line in raw.splitlines() if not line.strip().startswith("--")
-    )
-    statements = [
-        stmt.strip() for stmt in cleaned.split(";") if stmt.strip()
-    ]
+    cleaned = "\n".join(line for line in raw.splitlines() if not line.strip().startswith("--"))
+    statements = [stmt.strip() for stmt in cleaned.split(";") if stmt.strip()]
     conn = await asyncpg.connect(dsn)
     try:
         await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -56,13 +52,13 @@ async def _seed_chunks(dsn: str) -> None:
             "end_line": i * 10 + 5,
             "text": (
                 "def verify_jwt_token(token: str) -> bool:\n"
-                "    \"\"\"Verify a JSON Web Token issued by the authentication service.\"\"\"\n"
+                '    """Verify a JSON Web Token issued by the authentication service."""\n'
                 "    parts = token.split('.')\n"
                 "    return len(parts) == 3 and parts[0].startswith('eyJ')"
                 if i % 2 == 0
                 else (
                     "def oauth_login(provider: str) -> str:\n"
-                    "    \"\"\"Initiate an OAuth login flow with the selected provider.\"\"\"\n"
+                    '    """Initiate an OAuth login flow with the selected provider."""\n'
                     "    return f'https://{provider}/authorize'"
                 )
             ),
@@ -161,7 +157,11 @@ async def test_retrieve_rrf_orders_by_score(retrieval_env):
     assert len(results) >= 2
     assert results[0].score > results[-1].score
     # Results must be returned in descending score order.
-    assert all(
-        results[i].score >= results[i + 1].score
-        for i in range(len(results) - 1)
-    )
+    assert all(results[i].score >= results[i + 1].score for i in range(len(results) - 1))
+
+
+def test_budget_selection_skips_oversized_candidate() -> None:
+    oversized = RetrievedChunk("large", "large.py", 1, 2, "large", 3.0, 0.0, 1.0, 101)
+    fitting = RetrievedChunk("small", "small.py", 1, 2, "small", 2.0, 0.1, 0.5, 40)
+
+    assert _select_within_budget([oversized, fitting], top_k=2, token_budget=100) == [fitting]

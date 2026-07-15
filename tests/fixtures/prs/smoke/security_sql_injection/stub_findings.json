@@ -1,0 +1,9 @@
+[
+  {
+    "category": "security",
+    "severity": "critical",
+    "file": "src/db.py",
+    "line": 15,
+    "message": "User-supplied input is interpolated directly into a SQL query, creating an injection vulnerability."
+  }
+]

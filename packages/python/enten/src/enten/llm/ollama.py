@@ -53,6 +53,18 @@ class OllamaProvider:
             out["tool_call_id"] = message.tool_call_id
         if message.name:
             out["name"] = message.name
+        if message.tool_calls:
+            out["tool_calls"] = [
+                {
+                    "id": tool.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "arguments": tool.arguments,
+                    },
+                }
+                for tool in message.tool_calls
+            ]
         return out
 
     @staticmethod
@@ -85,6 +97,7 @@ class OllamaProvider:
         tools: list[ToolSchema] | None,
         model: str | None,
         stream: bool,
+        opts: dict[str, Any],
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self._resolve_model(model),
@@ -93,6 +106,8 @@ class OllamaProvider:
         }
         if tools:
             body["tools"] = [self._tool_to_ollama(t) for t in tools]
+        if max_tokens := opts.get("max_tokens"):
+            body["options"] = {"num_predict": max_tokens}
         return body
 
     async def complete(
@@ -103,7 +118,7 @@ class OllamaProvider:
     ) -> LLMResponse:
         """Issue a non-streaming chat request to Ollama."""
         model = opts.get("model")
-        payload = self._payload(messages, tools, model, stream=False)
+        payload = self._payload(messages, tools, model, stream=False, opts=opts)
         response = await self._client.post("/api/chat", json=payload)
 
         if response.status_code == 404:
@@ -148,7 +163,7 @@ class OllamaProvider:
     ) -> AsyncIterator[LLMDelta]:
         """Issue a streaming chat request to Ollama."""
         model = opts.get("model")
-        payload = self._payload(messages, tools, model, stream=True)
+        payload = self._payload(messages, tools, model, stream=True, opts=opts)
 
         async with self._client.stream("POST", "/api/chat", json=payload) as response:
             if response.status_code == 404:

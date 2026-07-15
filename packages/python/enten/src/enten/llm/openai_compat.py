@@ -8,7 +8,6 @@ other backend that exposes the ``/chat/completions`` endpoint. Only
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -22,12 +21,17 @@ from enten.llm.errors import (
     LLMRateLimitError,
     LLMUnavailableError,
 )
+from enten.llm.openai_wire import (
+    messages_text,
+    parse_stream_line,
+    request_payload,
+    tool_calls_from_openai,
+)
 from enten.llm.types import (
     LLMDelta,
     LLMResponse,
     Message,
     ToolSchema,
-    ToolUse,
     Usage,
 )
 
@@ -58,58 +62,6 @@ class OpenAICompatProvider:
     def _resolve_model(self, model: str | None) -> str:
         return model or self.default_model
 
-    @staticmethod
-    def _message_to_openai(message: Message) -> dict[str, Any]:
-        """Convert a normalized Message into an OpenAI chat message dict."""
-        content: str | list[dict[str, Any]]
-        raw_content = message.content
-
-        if isinstance(raw_content, str):
-            content = raw_content
-        else:
-            content = []
-            for part in raw_content:
-                if part.type == "text":
-                    content.append({"type": "text", "text": part.text or ""})
-                elif part.type == "image":
-                    content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": part.image_url or ""},
-                        },
-                    )
-
-        out: dict[str, Any] = {"role": message.role, "content": content}
-        if message.tool_call_id:
-            out["tool_call_id"] = message.tool_call_id
-        if message.name:
-            out["name"] = message.name
-        return out
-
-    @staticmethod
-    def _tool_to_openai(tool: ToolSchema) -> dict[str, Any]:
-        """Convert a ToolSchema into OpenAI's function-tool shape."""
-        return {
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-            },
-        }
-
-    @staticmethod
-    def _text_from_messages(messages: list[Message]) -> str:
-        """Flatten messages into a single string for token estimation."""
-        parts: list[str] = []
-        for message in messages:
-            content = message.content
-            if isinstance(content, str):
-                parts.append(content)
-            else:
-                parts.extend(part.text or "" for part in content)
-        return "\n".join(parts)
-
     def _payload(
         self,
         messages: list[Message],
@@ -119,52 +71,7 @@ class OpenAICompatProvider:
         temperature: float,
         opts: dict[str, Any],
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": [self._message_to_openai(m) for m in messages],
-            "stream": stream,
-            "temperature": temperature,
-        }
-        if tools:
-            body["tools"] = [self._tool_to_openai(t) for t in tools]
-
-        # Pass through provider-specific options (e.g. max_tokens) without
-        # overwriting the fields we have already normalized.
-        for key, value in opts.items():
-            if key not in body:
-                body[key] = value
-
-        return body
-
-    @staticmethod
-    def _parse_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
-        """Parse tool arguments from a JSON string or dict."""
-        if isinstance(raw_arguments, dict):
-            return raw_arguments
-        if isinstance(raw_arguments, str):
-            try:
-                return json.loads(raw_arguments)
-            except json.JSONDecodeError:
-                return {}
-        return {}
-
-    @classmethod
-    def _tool_calls_from_openai(
-        cls,
-        raw_tool_calls: list[dict[str, Any]],
-    ) -> list[ToolUse]:
-        """Map OpenAI tool_calls to normalized ToolUse objects."""
-        tool_calls: list[ToolUse] = []
-        for raw in raw_tool_calls:
-            fn = raw.get("function") or {}
-            tool_calls.append(
-                ToolUse(
-                    id=raw.get("id", ""),
-                    name=fn.get("name", ""),
-                    arguments=cls._parse_tool_arguments(fn.get("arguments")),
-                ),
-            )
-        return tool_calls
+        return request_payload(messages, tools, model, stream, temperature, opts)
 
     async def _post_with_retry(self, payload: dict[str, Any]) -> httpx.Response:
         """POST to /chat/completions with retries for rate limits and 5xx."""
@@ -245,7 +152,7 @@ class OpenAICompatProvider:
         message = choice.get("message") or {}
         content = message.get("content") or ""
 
-        tool_calls = self._tool_calls_from_openai(message.get("tool_calls") or [])
+        tool_calls = tool_calls_from_openai(message.get("tool_calls") or [])
 
         raw_usage = data.get("usage") or {}
         usage = Usage(
@@ -299,30 +206,11 @@ class OpenAICompatProvider:
             response.raise_for_status()
 
             async for line in response.aiter_lines():
-                if not line:
-                    continue
-
-                if line.startswith("data: "):
-                    line = line[6:]
-
-                if line == "[DONE]":
+                if line in {"[DONE]", "data: [DONE]"}:
                     break
-
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                choice = (data.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
-                delta_content = delta.get("content") or ""
-
-                delta_tool_calls: list[ToolUse] | None = None
-                raw_tool_calls = delta.get("tool_calls")
-                if raw_tool_calls:
-                    delta_tool_calls = self._tool_calls_from_openai(raw_tool_calls)
-
-                yield LLMDelta(content=delta_content, tool_calls=delta_tool_calls)
+                delta = parse_stream_line(line)
+                if delta is not None:
+                    yield delta
 
     def count_tokens(self, messages: list[Message]) -> int:
         """Return the approximate token count for ``messages``.
@@ -330,7 +218,7 @@ class OpenAICompatProvider:
         Uses ``tiktoken`` for ``gpt-4`` when available; otherwise falls back
         to a rough character-based heuristic.
         """
-        text = self._text_from_messages(messages)
+        text = messages_text(messages)
 
         try:
             enc = tiktoken.encoding_for_model("gpt-4")

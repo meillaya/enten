@@ -1,0 +1,9 @@
+[
+  {
+    "category": "bug",
+    "severity": "high",
+    "file": "src/checkout.py",
+    "line": 7,
+    "message": "Missing input validation permits negative prices to be added to the cart total."
+  }
+]

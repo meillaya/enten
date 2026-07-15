@@ -1,5 +1,0 @@
-Task 42 verification:
-- Files: packages/python/enten/src/enten/rate_limit.py, scripts/healthcheck-all.sh, scripts/error-budget-check.sh, docs/runbook.md
-- Commit: pending
-- Tests: packages/python/enten/tests/test_rate_limit.py
-- Status: PASS (all required deliverables present)

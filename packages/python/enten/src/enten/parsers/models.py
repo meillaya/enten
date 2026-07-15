@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class PytestSummary(BaseModel):
-    """Summary block from a pytest-json-report report."""
+    """Summary block from a normalized pytest report."""
 
     model_config = ConfigDict(extra="ignore")
     passed: int = 0
@@ -20,7 +20,7 @@ class PytestSummary(BaseModel):
 
 
 class PytestTest(BaseModel):
-    """Single test case from a pytest-json-report report."""
+    """Single test case from a normalized pytest report."""
 
     model_config = ConfigDict(extra="ignore")
     node_id: str = Field(alias="nodeid")
@@ -32,7 +32,7 @@ class PytestTest(BaseModel):
 
 
 class PytestResult(BaseModel):
-    """Parsed result of ``pytest --json-report``."""
+    """Parsed result of a pytest process and its structured report."""
 
     model_config = ConfigDict(extra="ignore")
     exit_code: int
@@ -81,7 +81,7 @@ class SemgrepResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
     exit_code: int
     results: list[SemgrepFinding] = []
-    errors: list[Any] = []
+    errors: list[Literal["invalid_rule", "scanner_error"]] = []
 
 
 class GitleaksFinding(BaseModel):
@@ -92,7 +92,6 @@ class GitleaksFinding(BaseModel):
     rule_id: str = Field(alias="RuleID")
     start_line: int = Field(alias="StartLine")
     end_line: int = Field(alias="EndLine")
-    match: str = Field(alias="Match")
     secret_redacted: str = "[REDACTED]"
 
 

@@ -1,13 +1,13 @@
 ---
 title: ADR 0009 — Minimal GitHub App permission scope for the bot
-status: Accepted
+status: Superseded in part by ADR 0012
 date: 2026-07-09
 deciders: enten maintainers
 ---
 
 ## Status
 
-Accepted.
+Permission set remains accepted. The event set is superseded by ADR 0012.
 
 ## Context
 
@@ -21,11 +21,7 @@ Grant the smallest set of permissions that supports the feature:
 - `checks: write` — create Check Runs with verification results.
 - `metadata: read` — read repository metadata required by the GitHub App API.
 
-Subscribe only to the events the handler understands:
-
-- `pull_request`
-- `pull_request_review`
-- `issue_comment`
+Subscribe only to `pull_request`; ADR 0012 defines the accepted action set.
 
 Explicitly denied: `contents: write`, `actions: write`, and any other write scope beyond checks and pull-request comments.
 

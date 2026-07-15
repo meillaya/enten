@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import asyncpg
@@ -12,6 +13,7 @@ from testcontainers.postgres import PostgresContainer
 
 from enten.embeddings import EmbeddingUnavailableError, OpenAICompatEmbeddings
 from enten.indexer import chunker
+from enten.indexer.pipeline import _chunk_id
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -48,11 +50,28 @@ class _RecordingEmbeddings:
         return [[0.0] * self.dimension for _ in texts]
 
 
+def test_persisted_chunk_identity_covers_snapshot_and_content() -> None:
+    chunk = chunker.Chunk(
+        chunk_id="parser-id",
+        path="src/a.py",
+        lang="python",
+        start_line=1,
+        end_line=2,
+        start_byte=0,
+        end_byte=8,
+        text="x = 1\n",
+    )
+
+    identity = _chunk_id("repo-a", "sha-a", chunk)
+    assert _chunk_id("repo-b", "sha-a", chunk) != identity
+    assert _chunk_id("repo-a", "sha-b", chunk) != identity
+    assert _chunk_id("repo-a", "sha-a", replace(chunk, path="src/b.py")) != identity
+    assert _chunk_id("repo-a", "sha-a", replace(chunk, text="x = 2\n")) != identity
+
+
 @pytest.mark.slow
 async def test_reindex_unchanged_repo_is_idempotent(pg_engine, monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "enten.indexer.pipeline.get_session", lambda: _db_session(pg_engine)
-    )
+    monkeypatch.setattr("enten.indexer.pipeline.get_session", lambda: _db_session(pg_engine))
     from enten.indexer.pipeline import index_repo_for_repo
 
     repo = tmp_path / "repo"
@@ -73,9 +92,7 @@ async def test_reindex_unchanged_repo_is_idempotent(pg_engine, monkeypatch, tmp_
 
 @pytest.mark.slow
 async def test_indexing_batches_chunks(pg_engine, monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "enten.indexer.pipeline.get_session", lambda: _db_session(pg_engine)
-    )
+    monkeypatch.setattr("enten.indexer.pipeline.get_session", lambda: _db_session(pg_engine))
     from enten.indexer.pipeline import index_repo_for_repo
 
     def fake_chunk(repo_path):

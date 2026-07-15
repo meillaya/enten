@@ -68,10 +68,7 @@ def test_bind_context_persists_across_calls(capsys: pytest.CaptureFixture[str]) 
     log.info("first")
     log.info("second", extra="ignored-but-not-evil")
 
-    lines = [
-        json.loads(line)
-        for line in capsys.readouterr().out.strip().splitlines()
-    ]
+    lines = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
     assert len(lines) == 2
     for line in lines:
         assert line["pr_number"] == 42, line

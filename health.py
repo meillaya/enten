@@ -13,7 +13,6 @@ import http.client
 import os
 import sys
 
-
 DEFAULT_PORT = 9090
 HEALTH_PATH = "/health"
 TIMEOUT_SECONDS = 5

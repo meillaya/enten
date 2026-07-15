@@ -7,13 +7,14 @@ OpenAI-compatible backend.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 import pytest
 import respx
 
 from enten.config import Settings
-from enten.llm import LLMProvider, Message, OpenAICompatProvider, ToolSchema
+from enten.llm import LLMProvider, Message, OpenAICompatProvider, ToolSchema, ToolUse
 from enten.llm.errors import LLMAuthenticationError
 
 BASE_URL = "https://api.openai.test/v1"
@@ -21,11 +22,12 @@ DEFAULT_MODEL = "gpt-4o-mini"
 
 
 def _settings() -> Settings:
-    return Settings(
-        _env_file=None,
-        llm_openai_base_url=BASE_URL,
-        llm_openai_api_key="sk-test",
-        llm_default_model=DEFAULT_MODEL,
+    return Settings.model_validate(
+        {
+            "llm_openai_base_url": BASE_URL,
+            "llm_openai_api_key": "sk-test",
+            "llm_default_model": DEFAULT_MODEL,
+        }
     )
 
 
@@ -108,11 +110,42 @@ async def test_complete_maps_tool_call(respx_mock: respx.MockRouter) -> None:
 
 
 @respx.mock
-async def test_stream_yields_deltas(respx_mock: respx.MockRouter) -> None:
-    chunk = (
-        'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'
-        "data: [DONE]\n\n"
+async def test_complete_serializes_assistant_tool_history(
+    respx_mock: respx.MockRouter,
+) -> None:
+    route = respx_mock.post(f"{BASE_URL}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "done"}}],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 1},
+            },
+        ),
     )
+    tool = ToolUse(id="call_1", name="lookup", arguments={"path": "a.py"})
+    provider = OpenAICompatProvider(_settings())
+
+    await provider.complete(
+        [
+            Message(role="assistant", content="checking", tool_calls=[tool]),
+            Message(role="tool", content="contents", tool_call_id=tool.id),
+        ],
+        max_tokens=321,
+    )
+
+    payload = route.calls.last.request.content
+    assert payload is not None
+    body = json.loads(payload)
+    assert body["max_tokens"] == 321
+    assert body["messages"][0]["tool_calls"][0]["function"] == {
+        "name": "lookup",
+        "arguments": '{"path": "a.py"}',
+    }
+
+
+@respx.mock
+async def test_stream_yields_deltas(respx_mock: respx.MockRouter) -> None:
+    chunk = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n'
     respx_mock.post(f"{BASE_URL}/chat/completions").mock(
         return_value=httpx.Response(
             200,
@@ -122,10 +155,7 @@ async def test_stream_yields_deltas(respx_mock: respx.MockRouter) -> None:
     )
 
     provider = OpenAICompatProvider(_settings())
-    deltas = [
-        delta
-        async for delta in provider.stream([Message(role="user", content="hello")])
-    ]
+    deltas = [delta async for delta in provider.stream([Message(role="user", content="hello")])]
 
     assert len(deltas) >= 1
     assert deltas[0].content == "hi"

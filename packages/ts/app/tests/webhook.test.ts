@@ -1,206 +1,538 @@
 import { Webhooks } from "@octokit/webhooks";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { computeIdempotencyKey, type JobsQueue, type WebhookPayload } from "../src/queue/jobs.js";
-import { register } from "prom-client";
 import { createApp } from "../src/server.js";
+import type { ProducedTrace, RequestTracing } from "../src/tracing.js";
 import prOpenedFixture from "./fixtures/webhook/pr-opened.json" assert { type: "json" };
 
 const TEST_SECRET = "test-webhook-secret";
+const DELIVERY_ID = "11111111-1111-4111-8111-111111111111";
+const TRACEPARENT =
+  "00-11111111111111111111111111111111-2222222222222222-01";
+const TRACESTATE = "vendor=value";
 
-function createMockQueue(): JobsQueue {
-  const enqueued: Array<{ payload: WebhookPayload; result: { runId: string; idempotencyKey: string; inserted: boolean } }> = [];
+const responseSchema = z.object({
+  received: z.literal(true),
+  run_id: z.string(),
+  idempotency_key: z.string(),
+  inserted: z.boolean(),
+});
 
-  return {
-    enqueue: vi.fn(async (payload: WebhookPayload) => {
-      const result = {
-        runId: `pr_testrunid00${enqueued.length}`,
-        idempotencyKey: computeIdempotencyKey(payload),
+function createQueue() {
+  const enqueue = vi.fn(async () => ({
+    runId: "pr_persistedrunid",
+    idempotencyKey: "a".repeat(64),
+    inserted: true,
+  }));
+  return { enqueue };
+}
+
+class RecordingTracing implements RequestTracing {
+  readonly serverSpans = vi.fn();
+  readonly producerSpans = vi.fn();
+
+  withServerSpan<T>(operation: () => Promise<T>): Promise<T> {
+    this.serverSpans();
+    return operation();
+  }
+
+  withProducerSpan<T>(
+    operation: (trace: ProducedTrace) => Promise<T>,
+  ): Promise<T> {
+    this.producerSpans();
+    return operation({
+      traceId: "11111111111111111111111111111111",
+      traceparent: TRACEPARENT,
+      tracestate: TRACESTATE,
+    });
+  }
+}
+
+function createTracing(): RecordingTracing {
+  return new RecordingTracing();
+}
+
+async function signPayload(payload: string): Promise<string> {
+  return new Webhooks({ secret: TEST_SECRET }).sign(payload);
+}
+
+async function postSigned(
+  app: ReturnType<typeof createApp>["app"],
+  payload: string,
+  headers: Readonly<Record<string, string>> = {},
+): Promise<Response> {
+  const signature = await signPayload(payload);
+  return app.request("/webhook", {
+    method: "POST",
+    body: payload,
+    headers: {
+      "Content-Type": "application/json",
+      "X-GitHub-Delivery": DELIVERY_ID,
+      "X-GitHub-Event": "pull_request",
+      "X-Hub-Signature-256": signature,
+      ...headers,
+    },
+  });
+}
+
+describe("POST /webhook supported pull requests", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it.each(["opened", "reopened", "synchronize", "ready_for_review"])(
+    "enqueues the strict versioned envelope when action is %s",
+    async (action) => {
+      // Given
+      const queue = createQueue();
+      const tracing = createTracing();
+      const app = createApp({
+        secret: TEST_SECRET,
+        databaseUrl: "postgresql://unused",
+        queue,
+        tracing,
+      }).app;
+      const payload = JSON.stringify({ ...prOpenedFixture, action });
+
+      // When
+      const response = await postSigned(app, payload);
+
+      // Then
+      expect(response.status).toBe(202);
+      expect(responseSchema.parse(await response.json())).toEqual({
+        received: true,
+        run_id: "pr_persistedrunid",
+        idempotency_key: "a".repeat(64),
         inserted: true,
-      };
-      enqueued.push({ payload, result });
-      return result;
-    }),
-    _enqueued: enqueued,
-  } as unknown as JobsQueue;
-}
+      });
+      expect(queue.enqueue).toHaveBeenCalledWith({
+        version: "1",
+        installation_id: 987654,
+        delivery_id: DELIVERY_ID,
+        repository: { id: 1296269, full_name: "octocat/hello-world" },
+        pull_request: {
+          number: 42,
+          head_sha: "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000",
+        },
+        action,
+        actor: { id: 1, login: "octocat" },
+        traceparent: TRACEPARENT,
+        tracestate: TRACESTATE,
+      });
+      expect(tracing.serverSpans).toHaveBeenCalledTimes(1);
+      expect(tracing.producerSpans).toHaveBeenCalledTimes(1);
+    },
+  );
+});
 
-async function signPayload(payload: string, secret = TEST_SECRET): Promise<string> {
-  const webhooks = new Webhooks({ secret });
-  return webhooks.sign(payload);
-}
+describe("POST /webhook ignored events", () => {
+  it.each(["closed", "converted_to_draft", "edited", "labeled"])(
+    "returns 200 without enqueue when the pull_request action is %s",
+    async (action) => {
+      // Given
+      const queue = createQueue();
+      const app = createApp({
+        secret: TEST_SECRET,
+        databaseUrl: "postgresql://unused",
+        queue,
+        tracing: createTracing(),
+      }).app;
 
-describe("POST /webhook", () => {
-  let queue: JobsQueue;
-  let app: ReturnType<typeof createApp>["app"];
+      // When
+      const response = await postSigned(
+        app,
+        JSON.stringify({ ...prOpenedFixture, action }),
+      );
 
-  beforeEach(() => {
-    register.resetMetrics();
-    queue = createMockQueue();
-    app = createApp({
+      // Then
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ received: true, ignored: true });
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns 200 without enqueue when the pull request is a draft", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
       secret: TEST_SECRET,
       databaseUrl: "postgresql://unused",
       queue,
+      tracing: createTracing(),
     }).app;
+    const payload = JSON.stringify({
+      ...prOpenedFixture,
+      pull_request: { ...prOpenedFixture.pull_request, draft: true },
+    });
+
+    // When
+    const response = await postSigned(app, payload);
+
+    // Then
+    expect(response.status).toBe(200);
+    expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it("returns 200 without enqueue for a bot-authored pull request", async () => {
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      botSlug: "enten-bot",
+      queue,
+      tracing: createTracing(),
+    }).app;
+    const payload = JSON.stringify({
+      ...prOpenedFixture,
+      pull_request: {
+        ...prOpenedFixture.pull_request,
+        user: { ...prOpenedFixture.pull_request.user, login: "enten-bot" },
+      },
+    });
+
+    const response = await postSigned(app, payload);
+
+    expect(response.status).toBe(200);
+    expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 202 for a valid signature", async () => {
+  it("returns 200 without enqueue for a private repository", async () => {
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+    const payload = JSON.stringify({
+      ...prOpenedFixture,
+      repository: { ...prOpenedFixture.repository, private: true },
+    });
+
+    const response = await postSigned(app, payload);
+
+    expect(response.status).toBe(200);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 without enqueue for every other signed event", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+    const payload = JSON.stringify({ action: "submitted" });
+
+    // When
+    const response = await postSigned(app, payload, {
+      "X-GitHub-Event": "pull_request_review",
+    });
+
+    // Then
+    expect(response.status).toBe(200);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /webhook rejected input", () => {
+  it("rejects a missing signature before reading or enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+
+    // When
+    const response = await app.request("/webhook", {
+      method: "POST",
+      body: JSON.stringify(prOpenedFixture),
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Delivery": DELIVERY_ID,
+        "X-GitHub-Event": "pull_request",
+      },
+    });
+
+    // Then
+    expect(response.status).toBe(401);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid signature without enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+
+    // When
+    const response = await app.request("/webhook", {
+      method: "POST",
+      body: JSON.stringify(prOpenedFixture),
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Delivery": DELIVERY_ID,
+        "X-GitHub-Event": "pull_request",
+        "X-Hub-Signature-256": `sha256=${"0".repeat(64)}`,
+      },
+    });
+
+    // Then
+    expect(response.status).toBe(401);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed supported-event schema without enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+    const malformed = JSON.stringify({
+      ...prOpenedFixture,
+      pull_request: { ...prOpenedFixture.pull_request, head: { sha: 42 } },
+    });
+
+    // When
+    const response = await postSigned(app, malformed);
+
+    // Then
+    expect(response.status).toBe(422);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects a signed body larger than the configured byte cap", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      maxWebhookBytes: 128,
+      queue,
+      tracing: createTracing(),
+    }).app;
+    const oversized = JSON.stringify({
+      ...prOpenedFixture,
+      padding: "x".repeat(512),
+    });
+
+    // When
+    const response = await postSigned(app, oversized);
+
+    // Then
+    expect(response.status).toBe(413);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsupported content type without enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
     const payload = JSON.stringify(prOpenedFixture);
     const signature = await signPayload(payload);
 
-    const res = await app.request("/webhook", {
+    // When
+    const response = await app.request("/webhook", {
       method: "POST",
       body: payload,
       headers: {
+        "Content-Type": "text/plain",
+        "X-GitHub-Delivery": DELIVERY_ID,
         "X-GitHub-Event": "pull_request",
-        "X-GitHub-Delivery": "delivery-1",
         "X-Hub-Signature-256": signature,
-        "Content-Type": "application/json",
       },
     });
 
-    expect(res.status).toBe(202);
-    const body = await res.json();
-    expect(body.received).toBe(true);
-    expect(body.idempotency_key).toBeDefined();
-    expect(body.run_id).toBeDefined();
-    expect(queue.enqueue).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns 401 when the signature is missing", async () => {
-    const payload = JSON.stringify(prOpenedFixture);
-
-    const res = await app.request("/webhook", {
-      method: "POST",
-      body: payload,
-      headers: {
-        "X-GitHub-Event": "pull_request",
-        "X-GitHub-Delivery": "delivery-1",
-        "Content-Type": "application/json",
-      },
-    });
-
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "missing signature" });
+    // Then
+    expect(response.status).toBe(415);
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 401 when the signature is invalid", async () => {
-    const payload = JSON.stringify(prOpenedFixture);
+  it("rejects malformed signed JSON without enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
 
-    const res = await app.request("/webhook", {
-      method: "POST",
-      body: payload,
-      headers: {
-        "X-GitHub-Event": "pull_request",
-        "X-GitHub-Delivery": "delivery-1",
-        "X-Hub-Signature-256": "sha256=0000000000000000000000000000000000000000000000000000000000000000",
-        "Content-Type": "application/json",
-      },
-    });
+    // When
+    const response = await postSigned(app, "{");
 
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "invalid signature" });
+    // Then
+    expect(response.status).toBe(400);
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 202 for duplicate deliveries with the same idempotency key", async () => {
+  it("rejects an absent event header without enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
     const payload = JSON.stringify(prOpenedFixture);
     const signature = await signPayload(payload);
 
-    const headers = {
-      "X-GitHub-Event": "pull_request",
-      "X-GitHub-Delivery": "delivery-dup",
-      "X-Hub-Signature-256": signature,
-      "Content-Type": "application/json",
+    // When
+    const response = await app.request("/webhook", {
+      method: "POST",
+      body: payload,
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Delivery": DELIVERY_ID,
+        "X-Hub-Signature-256": signature,
+      },
+    });
+
+    // Then
+    expect(response.status).toBe(400);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects an absent delivery header without enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+    const payload = JSON.stringify(prOpenedFixture);
+    const signature = await signPayload(payload);
+
+    // When
+    const response = await app.request("/webhook", {
+      method: "POST",
+      body: payload,
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "pull_request",
+        "X-Hub-Signature-256": signature,
+      },
+    });
+
+    // Then
+    expect(response.status).toBe(400);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid UTF-8 without attempting enqueue", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+
+    // When
+    const response = await app.request("/webhook", {
+      method: "POST",
+      body: new Uint8Array([0xc3, 0x28]),
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Delivery": DELIVERY_ID,
+        "X-GitHub-Event": "pull_request",
+        "X-Hub-Signature-256": `sha256=${"0".repeat(64)}`,
+      },
+    });
+
+    // Then
+    expect(response.status).toBe(400);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized declared content length before enqueueing", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      maxWebhookBytes: 128,
+      queue,
+      tracing: createTracing(),
+    }).app;
+
+    // When
+    const response = await app.request(
+      new Request("http://localhost/webhook", {
+        method: "POST",
+        body: "{}",
+        headers: {
+          "Content-Length": "1024",
+          "Content-Type": "application/json",
+          "X-GitHub-Delivery": DELIVERY_ID,
+          "X-GitHub-Event": "pull_request",
+          "X-Hub-Signature-256": `sha256=${"0".repeat(64)}`,
+        },
+      }),
+    );
+
+    // Then
+    expect(response.status).toBe(413);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("treats verifier failures as invalid signatures", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+      verifySignature: () =>
+        Promise.reject(new Error("verification unavailable")),
+    }).app;
+
+    // When
+    const response = await postSigned(app, JSON.stringify(prOpenedFixture));
+
+    // Then
+    expect(response.status).toBe(401);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when persistence fails", async () => {
+    // Given
+    const queue = {
+      enqueue: vi.fn(() => Promise.reject(new Error("database unavailable"))),
     };
-
-    const res1 = await app.request("/webhook", { method: "POST", body: payload, headers });
-    expect(res1.status).toBe(202);
-
-    const res2 = await app.request("/webhook", { method: "POST", body: payload, headers });
-    expect(res2.status).toBe(202);
-
-    const body1 = await res1.json();
-    const body2 = await res2.json();
-    expect(body1.idempotency_key).toBe(body2.idempotency_key);
-  });
-
-  it("returns 200 for unknown events without enqueueing", async () => {
-    const payload = JSON.stringify({ action: "created", ref: "refs/heads/main" });
-    const signature = await signPayload(payload);
-
-    const res = await app.request("/webhook", {
-      method: "POST",
-      body: payload,
-      headers: {
-        "X-GitHub-Event": "push",
-        "X-GitHub-Delivery": "delivery-push",
-        "X-Hub-Signature-256": signature,
-        "Content-Type": "application/json",
-      },
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.received).toBe(true);
-    expect(body.event).toBe("push");
-    expect(queue.enqueue).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for a malformed body", async () => {
-    const payload = "not-json";
-    const signature = await signPayload(payload);
-
-    const res = await app.request("/webhook", {
-      method: "POST",
-      body: payload,
-      headers: {
-        "X-GitHub-Event": "pull_request",
-        "X-GitHub-Delivery": "delivery-bad",
-        "X-Hub-Signature-256": signature,
-        "Content-Type": "application/json",
-      },
-    });
-
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "malformed body" });
-    expect(queue.enqueue).not.toHaveBeenCalled();
-  });
-});
-
-describe("GET /health", () => {
-  it("returns 200 ok", async () => {
-    const { app } = createApp({
+    const app = createApp({
       secret: TEST_SECRET,
       databaseUrl: "postgresql://unused",
-      queue: createMockQueue(),
-    });
+      queue,
+      tracing: createTracing(),
+    }).app;
 
-    const res = await app.request("/health");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", service: "enten-webhook" });
-  });
-});
+    // When
+    const response = await postSigned(app, JSON.stringify(prOpenedFixture));
 
-describe("GET /metrics", () => {
-  it("returns 200 text/plain Prometheus format", async () => {
-    register.resetMetrics();
-    const { app } = createApp({
-      secret: TEST_SECRET,
-      databaseUrl: "postgresql://unused",
-      queue: createMockQueue(),
-    });
-
-    const res = await app.request("/metrics");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/plain");
-    const body = await res.text();
-    expect(body).toContain("# HELP enten_webhook_requests_total");
-    expect(body).toContain("enten_webhook_requests_total 0");
+    // Then
+    expect(response.status).toBe(503);
+    expect(queue.enqueue).toHaveBeenCalledTimes(1);
   });
 });

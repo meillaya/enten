@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from enten.parsers.errors import ParserError
 from enten.parsers.models import (
     GitleaksFinding,
     GitleaksResult,
@@ -19,11 +20,7 @@ from enten.parsers.models import (
     SemgrepResult,
     VitestResult,
 )
-
-
-class ParserError(Exception):
-    """Raised when tool output cannot be parsed as the expected JSON schema."""
-
+from enten.parsers.pytest_junit import parse_pytest_junit_xml as parse_pytest_junit_xml
 
 FixturePath = Path(__file__).parent / "fixtures"
 
@@ -168,8 +165,26 @@ def parse_semgrep_json(data: bytes | str) -> SemgrepResult:
             )
         )
 
-    exit_code = 1 if findings or raw_errors else 0
-    return SemgrepResult(exit_code=exit_code, results=findings, errors=raw_errors)
+    errors: list[Literal["invalid_rule", "scanner_error"]] = []
+    for raw_error in raw_errors:
+        message = (
+            raw_error
+            if isinstance(raw_error, str)
+            else str(raw_error.get("message", ""))
+            if isinstance(raw_error, dict)
+            else ""
+        )
+        lowered = message.lower()
+        if any(
+            hint in lowered
+            for hint in ("invalid configuration", "invalid yaml", "rule parse error")
+        ):
+            errors.append("invalid_rule")
+        else:
+            errors.append("scanner_error")
+
+    exit_code = 1 if findings or errors else 0
+    return SemgrepResult(exit_code=exit_code, results=findings, errors=errors)
 
 
 def parse_gitleaks_json(data: bytes | str) -> GitleaksResult:

@@ -47,19 +47,19 @@ def test_cli_worker_accepts_poll_interval(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def _fake_report() -> EvalReport:
+    aggregate = EvalMetrics(
+        precision=0.5,
+        recall=0.5,
+        false_positive_rate=0.5,
+        count=1,
+        n_correct=1,
+        n_missed=1,
+        n_hallucinated=1,
+    )
     return EvalReport(
         n_fixtures=1,
-        by_kind={
-            "bug": EvalMetrics(
-                precision=0.5,
-                recall=0.5,
-                false_positive_rate=0.5,
-                count=1,
-                n_correct=1,
-                n_missed=1,
-                n_hallucinated=1,
-            )
-        },
+        aggregate=aggregate,
+        by_kind={"bug": aggregate},
         cost={"fixture_count": 1},
         latency={"total_ms": 10, "mean_ms": 10, "per_fixture": {}},
         determinism={"passed": True},

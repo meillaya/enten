@@ -136,9 +136,7 @@ async def test_get_pull_request_returns_parsed_pull_request(
         "body": "PR description",
         "html_url": "https://github.com/owner/repo/pull/42",
     }
-    respx_mock.get(path="/repos/owner/repo/pulls/42").mock(
-        return_value=Response(200, json=payload)
-    )
+    respx_mock.get(path="/repos/owner/repo/pulls/42").mock(return_value=Response(200, json=payload))
 
     pr = await client.get_pull_request("owner", "repo", 42)
 
@@ -347,9 +345,7 @@ async def test_create_and_update_check_run_return_check_run(
         )
     )
 
-    check_run = await client.create_check_run(
-        "owner", "repo", "abc123", "success", output
-    )
+    check_run = await client.create_check_run("owner", "repo", "abc123", "success", output)
     assert check_run.id == 987
     assert check_run.conclusion == "success"
 

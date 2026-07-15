@@ -16,6 +16,9 @@ from enten.db import Base
 if TYPE_CHECKING:
     pass
 
+JsonScalar = str | int | float | bool | None
+JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+
 
 class Job(Base):
     __tablename__ = "jobs"
@@ -26,13 +29,16 @@ class Job(Base):
     run_id: Mapped[str] = mapped_column(Text, unique=True)
     kind: Mapped[str] = mapped_column(Text)
     state: Mapped[str] = mapped_column(Text)
-    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB, default=dict)
     attempts: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
     trace_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_generation: Mapped[int] = mapped_column(default=0)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 class PRReview(Base):
@@ -51,7 +57,7 @@ class PRReview(Base):
     run_id: Mapped[str | None] = mapped_column(
         ForeignKey("jobs.run_id", ondelete="SET NULL"), nullable=True
     )
-    evidence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    evidence: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
@@ -90,7 +96,7 @@ class Fixture(Base):
     repo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     base_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
     head_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
-    expected_findings: Mapped[list] = mapped_column(JSONB, default=list)
+    expected_findings: Mapped[list[JsonValue]] = mapped_column(JSONB, default=list)
 
 
 class SandboxRun(Base):
@@ -108,6 +114,6 @@ class SandboxRun(Base):
     exit_code: Mapped[int | None] = mapped_column(nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    evidence_paths: Mapped[list] = mapped_column(JSONB, default=list)
+    evidence_paths: Mapped[list[JsonValue]] = mapped_column(JSONB, default=list)
 
     review: Mapped[PRReview] = relationship(back_populates="sandbox_runs")

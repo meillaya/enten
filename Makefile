@@ -23,6 +23,11 @@ TS_DIRS  := $(wildcard $(ROOT_DIR)/packages/ts/*)
 # Tooling discovery — fall back to PATH lookups for portability.
 PNPM ?= $(shell command -v pnpm 2>/dev/null || echo pnpm)
 UV   ?= $(shell command -v uv   2>/dev/null || echo uv)
+RUFF := $(UV)x --from ruff==0.15.18 ruff
+RUFF_PATHS ?= .
+PYTEST_PATHS ?= tests packages/python/enten/tests
+EVAL_CORPUS ?= tests/fixtures/prs/smoke
+EVAL_REPORT ?= /tmp/enten-eval-report.json
 
 .DEFAULT_GOAL := help
 
@@ -37,9 +42,9 @@ help: ## Show this help (default target).
 .PHONY: install
 install: ## [py+ts] Install every workspace's dependencies.
 	@echo ">> uv sync (root + python workspace)"
-	@cd $(ROOT_DIR) && $(UV) sync
+	@cd $(ROOT_DIR) && $(UV) sync --project $(PY_DIR) --all-groups --locked
 	@echo ">> pnpm install (root + ts workspace)"
-	@cd $(ROOT_DIR) && $(PNPM) install --frozen-lockfile=false
+	@cd $(ROOT_DIR) && $(PNPM) install --frozen-lockfile
 
 # ─── test ────────────────────────────────────────────────────────────────
 .PHONY: test
@@ -47,7 +52,8 @@ test: test-py test-ts ## [py+ts] Run every test suite.
 
 .PHONY: test-py
 test-py: ## [py] Run pytest across the Python workspace.
-	@cd $(PY_DIR) && $(UV) run pytest
+	@cd $(ROOT_DIR) && $(UV) run --project $(PY_DIR) pytest \
+		--junitxml=/tmp/enten-pytest.xml $(PYTEST_PATHS)
 
 .PHONY: test-ts
 test-ts: ## [ts] Run vitest across every TypeScript package.
@@ -55,30 +61,31 @@ test-ts: ## [ts] Run vitest across every TypeScript package.
 
 # ─── lint / format ───────────────────────────────────────────────────────
 .PHONY: lint
-lint: lint-py lint-ts ## [py+ts] Lint every workspace.
+lint: lint-py ## [py] Run the declared Python linter.
 
 .PHONY: lint-py
 lint-py: ## [py] ruff check (configured in pyproject.toml).
-	@cd $(ROOT_DIR) && $(UV) run ruff check .
-
-.PHONY: lint-ts
-lint-ts: ## [ts] delegated to per-package linters (T07 will wire eslint/biome).
-	@cd $(ROOT_DIR) && $(PNPM) -r --filter './packages/ts/*' lint || true
+	@cd $(ROOT_DIR) && $(RUFF) check $(RUFF_PATHS)
 
 .PHONY: format
-format: format-py format-ts ## [py+ts] Auto-format every workspace.
+format: format-py ## [py] Auto-format the Python workspace.
 
 .PHONY: format-py
 format-py: ## [py] ruff format.
-	@cd $(ROOT_DIR) && $(UV) run ruff format .
+	@cd $(ROOT_DIR) && $(RUFF) format .
 
-.PHONY: format-ts
-format-ts: ## [ts] delegated to per-package formatters.
-	@cd $(ROOT_DIR) && $(PNPM) -r --filter './packages/ts/*' format || true
+# ─── typecheck ──────────────────────────────────────────────────────────
+.PHONY: typecheck typecheck-ts
+typecheck: typecheck-ts ## [ts] Run the declared TypeScript compiler gate.
+
+typecheck-ts: ## [ts] Type-check without emitting build output.
+	@cd $(ROOT_DIR) && $(PNPM) -r --filter './packages/ts/*' typecheck
 
 # ─── build / dev ─────────────────────────────────────────────────────────
-.PHONY: build
+.PHONY: build build-ts
 build: build-ts ## [ts] Compile the TypeScript workspace.
+
+build-ts: ## [ts] Emit the TypeScript distribution artifacts.
 	@cd $(ROOT_DIR) && $(PNPM) -r --filter './packages/ts/*' build
 
 .PHONY: dev
@@ -91,17 +98,35 @@ coverage: coverage-py coverage-ts ## [py+ts] Generate coverage for every workspa
 
 .PHONY: coverage-py
 coverage-py: ## [py] pytest --cov.
-	@cd $(PY_DIR) && $(UV) run pytest --cov=enten --cov-report=term-missing
+	@cd $(ROOT_DIR) && ENTEN_COVERAGE_SCOPE=python bash scripts/check-coverage.sh
 
 .PHONY: coverage-ts
 coverage-ts: ## [ts] vitest --coverage.
-	@cd $(ROOT_DIR) && $(PNPM) -r --filter './packages/ts/*' coverage
+	@cd $(ROOT_DIR) && ENTEN_COVERAGE_SCOPE=typescript bash scripts/check-coverage.sh
 
 # ─── eval ────────────────────────────────────────────────────────────────
 .PHONY: eval
-eval: ## [py] Run the agent evaluation harness (added by T36).
-	@echo "eval: not yet implemented (T36 will add the harness)"
-	@exit 0
+eval: ## [py] Run the agent evaluation harness.
+	@cd $(ROOT_DIR) && $(UV) run --project $(PY_DIR) enten eval \
+		--corpus $(EVAL_CORPUS) \
+		--report $(EVAL_REPORT) \
+		--stub-llm
+	@cd $(ROOT_DIR) && $(UV) run scripts/eval-threshold-check.py $(EVAL_REPORT)
+
+# ─── release policy ─────────────────────────────────────────────────────
+.PHONY: permissions security audit
+permissions: ## Audit requested GitHub App permissions.
+	@cd $(ROOT_DIR) && bash scripts/check-permissions.sh
+
+security: ## Scan the release tree and history for secrets.
+	@cd $(ROOT_DIR) && bash scripts/check-release-secrets.sh
+
+audit: ## Fail on any published JavaScript dependency vulnerability.
+	@cd $(ROOT_DIR) && $(PNPM) audit --audit-level=low
+
+# ─── aggregate gate ─────────────────────────────────────────────────────
+.PHONY: check
+check: lint typecheck build coverage eval permissions security audit ## Run every release gate.
 
 # ─── clean ───────────────────────────────────────────────────────────────
 .PHONY: clean

@@ -1,23 +1,30 @@
 app = "enten-ai"
 primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 30
 
 [build]
   dockerfile = "Dockerfile"
 
+[deploy]
+  release_command = "python -m enten.migrations apply --baseline-existing"
+
+[processes]
+  web = "node packages/ts/app/dist/server.js"
+  worker = "enten worker"
+
 [env]
-  DATABASE_URL = ""
-  OTEL_ENDPOINT = "http://otel-collector.internal:4317"
-  SANDBOX_PROVIDER = "e2b"
-  LLM_PROVIDER = "openai-compat"
+  OTEL_EXPORTER_OTLP_ENDPOINT = "http://otel-collector.internal:4317"
   PORT = "3000"
-  METRICS_PORT = "9090"
+  METRICS_PORT = "9091"
 
 [[services]]
+  processes = ["web"]
   internal_port = 3000
   protocol = "tcp"
-  auto_stop_machines = "stop"
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [[services.ports]]
     handlers = ["http"]
@@ -35,14 +42,6 @@ primary_region = "iad"
     method = "GET"
     path = "/health"
     port = 3000
-
-[[services]]
-  internal_port = 9090
-  protocol = "tcp"
-  auto_stop_machines = "stop"
-  auto_start_machines = true
-  min_machines_running = 0
-  # Internal metrics port — no public [[services.ports]] block.
 
 [[vm]]
   size = "shared-cpu-1x"

@@ -1,5 +1,0 @@
-Task 32 verification:
-- Files: packages/python/enten/src/enten/static_analysis/semgrep.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_semgrep.py
-- Status: PASS (all required deliverables present)

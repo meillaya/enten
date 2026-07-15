@@ -1,5 +1,0 @@
-Task 35 verification:
-- Files: packages/python/enten/src/enten/embeddings/_factory.py, packages/python/enten/src/enten/embeddings/_openai_compat.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_embedding_pipeline.py, packages/python/enten/tests/test_f1_coverage.py
-- Status: PASS (all required deliverables present)

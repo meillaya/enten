@@ -54,9 +54,7 @@ class FakeSandboxProvider:
             return ExecResult(exit_code=1 if has_issue else 0, stdout="", stderr="", duration_ms=1)
 
         if cmd == ["cat", "/tmp/bandit.json"]:
-            return ExecResult(
-                exit_code=0, stdout=self._bandit_json(), stderr="", duration_ms=1
-            )
+            return ExecResult(exit_code=0, stdout=self._bandit_json(), stderr="", duration_ms=1)
 
         if cmd[0] == "semgrep":
             return ExecResult(
@@ -68,9 +66,7 @@ class FakeSandboxProvider:
 
         return ExecResult(exit_code=0, stdout="", stderr="", duration_ms=1)
 
-    async def upload(
-        self, handle: SandboxHandle, files: dict[str, str | bytes]
-    ) -> None:
+    async def upload(self, handle: SandboxHandle, files: dict[str, str | bytes]) -> None:
         for name, content in files.items():
             self._files[name] = content.decode("utf-8") if isinstance(content, bytes) else content
 
@@ -165,7 +161,7 @@ async def test_gitleaks_detects_aws_key_and_redacts_secret(
     assert finding.file == "config/aws.env"
     assert finding.line == 1
     assert "AKIA0000000000000000" not in finding.message
-    assert "***" in finding.message
+    assert "[REDACTED]" in finding.message
 
 
 async def test_bandit_detects_hardcoded_password(
@@ -190,9 +186,7 @@ async def test_bandit_detects_hardcoded_password(
     assert "hardcoded password" in finding.message.lower()
 
 
-async def test_clean_repo_has_no_findings(
-    sandbox: FakeSandboxProvider, tmp_path: Any
-) -> None:
+async def test_clean_repo_has_no_findings(sandbox: FakeSandboxProvider, tmp_path: Any) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "src").mkdir()

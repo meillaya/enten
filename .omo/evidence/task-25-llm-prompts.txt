@@ -1,5 +1,0 @@
-Task 25 verification:
-- Files: packages/python/enten/src/enten/llm/prompts.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_prompts.py
-- Status: PASS (all required deliverables present)

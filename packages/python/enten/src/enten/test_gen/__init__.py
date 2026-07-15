@@ -20,7 +20,9 @@ from enten.llm.client import AgentLoopSpec
 from enten.llm.prompts import load_prompt, render
 from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse
 from enten.parsers.models import PytestResult, VitestResult
-from enten.parsers.runners import SandboxProvider, run_pytest, run_vitest
+from enten.parsers.runners import run_pytest, run_vitest
+from enten.sandbox.files import UnsafeSandboxPathError, write_sandbox_files
+from enten.sandbox.protocol import SandboxProvider
 
 MAX_PATCH_BYTES = 50_000
 
@@ -92,19 +94,21 @@ def _build_code(draft: ReviewDraft, retrieved_chunks: list[str]) -> str:
 
 def _write_repo_files(tests: list[GeneratedTest]) -> str:
     tmpdir = Path(tempfile.mkdtemp(prefix="enten-test-gen-"))
-    for test in tests:
-        target = tmpdir / test.file_path
-        _ = target.parent.mkdir(parents=True, exist_ok=True)
-        _ = target.write_text(test.content, encoding="utf-8")
+    try:
+        write_sandbox_files(
+            tmpdir,
+            {test.file_path: test.content for test in tests},
+        )
+    except UnsafeSandboxPathError as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise GenerationError(str(exc)) from exc
     return str(tmpdir)
 
 
 def _check_size(tests: list[GeneratedTest]) -> None:
     total = sum(len(t.content.encode("utf-8")) for t in tests)
     if total > MAX_PATCH_BYTES:
-        raise GenerationError(
-            f"Combined generated tests exceed {MAX_PATCH_BYTES} bytes ({total})"
-        )
+        raise GenerationError(f"Combined generated tests exceed {MAX_PATCH_BYTES} bytes ({total})")
 
 
 async def generate_tests(

@@ -1,93 +1,182 @@
-/**
- * enten HTTP entry point.
- *
- * Exposes:
- *   GET  /health   -> 200 { status: "ok", service: "enten-webhook" }
- *   GET  /metrics  -> text/plain Prometheus metrics
- *   POST /webhook  -> GitHub App webhook receiver with signature validation
- *
- * The Hono `app` is exported for tests; `start()` actually binds to
- * PORT / METRICS_PORT via `@hono/node-server` when the module is run
- * directly (e.g. `node dist/server.js`).
- */
-
-import { serve } from "@hono/node-server";
+import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import postgres from "postgres";
 
 import { parse, type Config } from "./config.js";
 import { createLogger } from "./logging.js";
-import { createJobsQueue, type JobsQueue } from "./queue/jobs.js";
+import {
+  createJobsQueue,
+  type JobEnqueuer,
+} from "./queue/jobs.js";
 import { healthHandler } from "./routes/health.js";
 import { metricsHandler } from "./routes/metrics.js";
 import { createWebhookHandler } from "./routes/webhook.js";
+import { initOtel, type OtelLifecycle } from "./otel.js";
+import { createRequestTracing, type RequestTracing } from "./tracing.js";
 
 const logger = createLogger("server");
 
 export interface CreateAppOptions {
-  secret: string;
-  databaseUrl: string;
-  sql?: postgres.Sql;
-  queue?: JobsQueue;
+  readonly secret: string;
+  readonly botSlug?: string;
+  readonly databaseUrl: string;
+  readonly sql?: postgres.Sql;
+  readonly queue?: JobEnqueuer;
+  readonly tracing?: RequestTracing;
+  readonly maxWebhookBytes?: number;
+  readonly verifySignature?: (
+    body: string,
+    signature: string,
+  ) => Promise<boolean>;
 }
 
-export function createApp(options: CreateAppOptions) {
+export type CreatedApp = {
+  readonly app: Hono;
+  readonly sql: postgres.Sql;
+  readonly queue: JobEnqueuer;
+};
+
+export class ConfigurationError extends Error {
+  override readonly name = "ConfigurationError";
+
+  constructor(readonly detail: string) {
+    super(`configuration invalid: ${detail}`);
+  }
+}
+
+export function createApp(options: CreateAppOptions): CreatedApp {
   const app = new Hono();
-
-  const pgUrl = options.databaseUrl.replace(/^postgresql\+asyncpg:\/\//, "postgresql://");
-  const sql = options.sql ?? postgres(pgUrl, {
-    max: 10,
-    idle_timeout: 20,
-    connect_timeout: 10,
-  });
-
+  const pgUrl = options.databaseUrl.replace(
+    /^postgresql\+asyncpg:\/\//,
+    "postgresql://",
+  );
+  const sql =
+    options.sql ??
+    postgres(pgUrl, {
+      max: 10,
+      idle_timeout: 20,
+      connect_timeout: 2,
+      connection: {
+        statement_timeout: 3_000,
+        lock_timeout: 1_000,
+      },
+    });
   const queue = options.queue ?? createJobsQueue({ sql });
+  const tracing = options.tracing ?? createRequestTracing();
 
   app.get("/health", healthHandler);
   app.get("/metrics", metricsHandler);
-  app.post("/webhook", createWebhookHandler({ secret: options.secret, queue }));
+  app.post(
+    "/webhook",
+    createWebhookHandler({
+      secret: options.secret,
+      botSlug: options.botSlug ?? "enten-bot",
+      queue,
+      tracing,
+      maxWebhookBytes: options.maxWebhookBytes ?? 1024 * 1024,
+      ...(options.verifySignature === undefined
+        ? {}
+        : { verifySignature: options.verifySignature }),
+    }),
+  );
 
   return { app, sql, queue };
 }
 
-export function loadConfig(env: Record<string, string | undefined>): Config {
-  const envResult = parse(env);
-  if (!envResult.ok) {
-    logger.error({ error: envResult.error }, "configuration invalid");
-    process.exit(1);
+export function loadConfig(
+  env: Record<string, string | undefined>,
+): Config {
+  const result = parse(env);
+  if (!result.ok) {
+    throw new ConfigurationError(result.error);
   }
-  return envResult.value;
+  return result.value;
 }
 
-const config = loadConfig(process.env);
-const { app, sql } = createApp({
-  secret: config.GITHUB_WEBHOOK_SECRET,
-  databaseUrl: config.DATABASE_URL,
-});
+export type Runtime = {
+  readonly app: Hono;
+  readonly sql: postgres.Sql;
+  shutdown(): Promise<void>;
+};
 
-export function start(options?: { serve?: typeof serve }): void {
-  const doServe = options?.serve ?? serve;
-  const port = parseInt(config.PORT, 10);
-  const metricsPort = parseInt(config.METRICS_PORT, 10);
+export type StartOptions = {
+  readonly config?: Config;
+  readonly env?: Record<string, string | undefined>;
+  readonly serve?: typeof serve;
+  readonly initTelemetry?: (endpoint: string) => OtelLifecycle;
+};
 
-  doServe({
-    fetch: app.fetch,
-    port,
-  } as Parameters<typeof serve>[0]);
-  logger.info({ port }, "webhook server listening");
+function closeServer(server: ServerType): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) {
+        resolve();
+        return;
+      }
+      reject(error);
+    });
+  });
+}
 
-  if (metricsPort !== port) {
-    doServe({
-      fetch: app.fetch,
-      port: metricsPort,
-    } as Parameters<typeof serve>[0]);
+export async function start(options: StartOptions = {}): Promise<Runtime> {
+  const config = options.config ?? loadConfig(options.env ?? process.env);
+  const telemetry = (options.initTelemetry ?? initOtel)(config.OTEL_ENDPOINT);
+  const created = createApp({
+    secret: config.GITHUB_WEBHOOK_SECRET,
+    botSlug: config.GITHUB_APP_SLUG,
+    databaseUrl: config.DATABASE_URL,
+  });
+  const listen = options.serve ?? serve;
+  const webhookPort = Number(config.PORT);
+  const metricsPort = Number(config.METRICS_PORT);
+  const servers = [listen({ fetch: created.app.fetch, port: webhookPort })];
+  if (metricsPort !== webhookPort) {
+    servers.push(listen({ fetch: created.app.fetch, port: metricsPort }));
+  }
+
+  let shutdownPromise: Promise<void> | undefined;
+  const onSignal = (): void => {
+    shutdown().catch((error: unknown) => {
+      if (error instanceof Error) {
+        logger.error({ error }, "graceful shutdown failed");
+        return;
+      }
+      logger.error({ error: String(error) }, "graceful shutdown failed");
+    });
+  };
+
+  async function drain(): Promise<void> {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    await Promise.all(servers.map(closeServer));
+    await created.sql.end({ timeout: 5 });
+    await telemetry.shutdown();
+  }
+
+  function shutdown(): Promise<void> {
+    shutdownPromise ??= drain();
+    return shutdownPromise;
+  }
+
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  logger.info({ port: webhookPort }, "webhook server listening");
+  if (metricsPort !== webhookPort) {
     logger.info({ port: metricsPort }, "metrics server listening");
   }
+
+  return { app: created.app, sql: created.sql, shutdown };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  start();
+  try {
+    await start();
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      logger.error({ error }, "server startup failed");
+    } else {
+      logger.error({ error: String(error) }, "server startup failed");
+    }
+    process.exitCode = 1;
+  }
 }
-
-export default app;
-export { app, config, sql };

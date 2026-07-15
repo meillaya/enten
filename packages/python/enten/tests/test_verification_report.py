@@ -11,6 +11,7 @@ from enten.github.client import GitHubClient
 from enten.reporting.comment import BOT_MARKER, Finding, PRReview
 from enten.reporting.verification_report import Patch, PRReviewRun, post_report, render_report
 from enten.test_gen import GeneratedTest, GeneratedTests, ReviewDraft
+from enten.verification.flaky import RunSummary
 from enten.verification.verify import RunEvidence, VerificationResult
 
 
@@ -24,7 +25,7 @@ def _verification(
         exit_codes=[1],
         flaky=False,
         sandbox_ids=["sandbox-1"],
-        log_paths=["/tmp/pytest-report.json"],
+        log_paths=["/tmp/pytest-report.xml"],
     )
 
 
@@ -116,17 +117,17 @@ def test_render_report_end_to_end_sections() -> None:
         runs=[
             RunEvidence(
                 exit_code=1,
-                summary={"failed": 1, "passed": 0},
+                summary=RunSummary(failed=1, passed=0),
                 duration_ms=1234,
                 sandbox_id="sandbox-1",
                 command=["pytest", "tests/test_app.py"],
-                log_paths=["/tmp/pytest-report.json"],
+                log_paths=["/tmp/pytest-report.xml"],
             )
         ],
         exit_codes=[1],
         flaky=False,
         sandbox_ids=["sandbox-1"],
-        log_paths=["/tmp/pytest-report.json"],
+        log_paths=["/tmp/pytest-report.xml"],
     )
     attributions = [
         Attribution(

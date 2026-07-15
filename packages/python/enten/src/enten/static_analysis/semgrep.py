@@ -9,11 +9,11 @@ so they never leave the local repo.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from enten.parsers import parse_semgrep_json
+from enten.sandbox.files import collect_repository_files
 from enten.sandbox.protocol import SandboxProvider
 
 
@@ -44,30 +44,14 @@ class SemgrepRuleError(Exception):
     """Raised when a custom Semgrep rule file is invalid YAML or fails validation."""
 
 
-_RULE_ERROR_HINTS = ("invalid configuration", "invalid yaml", "rule parse error")
-
-
 def _repo_files(repo_path: str) -> dict[str, str]:
     """Read every file under ``repo_path`` into a flat ``{relative_path: text}`` map."""
-    files: dict[str, str] = {}
-    base = Path(repo_path)
-    if not base.exists():
-        return files
-    for path in base.rglob("*"):
-        if path.is_file():
-            rel = path.relative_to(base).as_posix()
-            try:
-                files[rel] = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                files[rel] = path.read_bytes().decode("utf-8", errors="replace")
-    return files
+    return collect_repository_files(repo_path)
 
 
-def _is_rule_error(error: Any) -> bool:
+def _is_rule_error(error: str) -> bool:
     """Return True if a Semgrep error object indicates an invalid rule/config."""
-    message = error if isinstance(error, str) else str(error.get("message", ""))
-    lowered = message.lower()
-    return any(hint in lowered for hint in _RULE_ERROR_HINTS)
+    return error == "invalid_rule"
 
 
 async def run_semgrep(
@@ -119,9 +103,9 @@ async def run_semgrep(
 
         findings = [SemgrepFinding.model_validate(f.model_dump()) for f in parsed.results]
         return SemgrepResult(
-            exit_code=parsed.exit_code,
+            exit_code=exec_result.exit_code,
             findings=findings,
-            errors=[str(error) for error in parsed.errors],
+            errors=list(parsed.errors),
         )
     finally:
         await sandbox.destroy(handle)

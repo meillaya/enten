@@ -126,9 +126,7 @@ def _tool(unified_diff: str, rationale: str = "fixes behavior") -> ToolUse:
 async def test_generate_and_check_valid_diff(fake_provider: FakeProvider) -> None:
     """A valid diff passes ``git apply --check`` in the sandbox."""
     fake_provider.results = {
-        "git apply --check patch.diff": ExecResult(
-            exit_code=0, stdout="", stderr="", duration_ms=0
-        )
+        "git apply --check patch.diff": ExecResult(exit_code=0, stdout="", stderr="", duration_ms=0)
     }
     llm_client = FakeLLMClient([_tool(VALID_DIFF, "fix subtraction")])
     sandbox = SandboxHandle(id="fake", provider="docker", image="python:3.12-slim")

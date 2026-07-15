@@ -1,135 +1,48 @@
-# Demo repository
+# HTTPie verifier demonstration
 
-> Status: demo repo selected (`httpie/cli`), fixture corpus scaffolded.
-> Real fixtures and eval harness arrive in T36/T37.
+The release includes a hermetic verifier image for a pinned public `httpie/cli` snapshot. It proves the image and three-run verifier contract; it does not publish an image, create a fork, install a GitHub App, or post to live GitHub during CI.
 
-The demo repository is a small, known open-source project that the agent will
-be pointed at to exercise every end-to-end capability. It exists so that:
+## Immutable contract
 
-1. CI can run reproducible smoke tests against a real GitHub-shaped payload.
-2. The eval harness can score completions against known-good bug-fix PRs.
-3. Humans can poke the agent in a sandboxed way during development.
+`docker/verifier-httpie/` records:
 
-For this project we selected the public **`httpie/cli`** repository.
+- upstream repository and commit;
+- expected Git tree;
+- one trusted offline pytest selector;
+- hash-locked build and runtime dependencies;
+- non-root runtime and minimal image contents.
 
-## Why this repo
-
-`httpie/cli` is the upstream home of HTTPie, a command-line HTTP client. It is
-a good demo target for enten because:
-
-- **Small enough to reason about** — the core CLI package is roughly 30 kLOC of
-  Python, so the agent can ingest the whole repo context without hitting token
-  cliffs.
-- **Python + CLI** — matches the agent's primary language (Python) and a
-  well-understood domain (CLI argument parsing, HTTP requests, output
-  formatting).
-- **Mature test suite** — the project uses `pytest`, so the agent can run
-  existing tests to validate patches and we can write fixture replays that
-  exercise real test failures.
-- **Permissive license** — BSD-3-Clause, which is safe to fork, mirror, and
-  redistribute as a fixture.
-- **Known bug-fix history** — the project has a long history of small,
-  well-scoped bug-fix PRs (off-by-one formatting issues, null-deref guards,
-  input validation holes) that are ideal for replay fixtures.
-- **No real user data** — a public OSS repo; fixtures can be derived entirely
-  from public commits and issues.
-
-## How to fork (one-time manual step)
-
-CI cannot create the fork, so a human with GitHub CLI access does it once:
+The integration test builds a unique local tag, runs nine candidate checks (three complete three-run verifier cycles), verifies metadata and negative contract mutations, and removes the tag and containers.
 
 ```bash
-gh repo fork httpie/cli --clone=false --remote=true
+ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 \
+  ENTEN_HTTPIE_SOURCE=/path/to/trusted/httpie-checkout \
+  uv run pytest tests/test_demo_image.py -q
 ```
 
-This creates a fork under your personal/org account without cloning it
-locally. The bot will be installed against that fork, not against the upstream
-repo, so tests cannot accidentally spam the real HTTPie maintainers.
+The trusted checkout must already match the recorded commit/tree. The runtime container is networkless and read-only.
 
-## How to obtain a GitHub App installation URL
+## Local GitHub demonstration
 
-1. Create a GitHub App (or reuse the enten app) with the permissions listed in
-   `docs/github-app.md` (minimum: `pull_requests: write`, `checks: write`,
-   `metadata: read`; subscribe to `pull_request`, `pull_request_review`, and
-   `issue_comment` events).
-2. From the app's settings page, choose **Install App** and select the forked
-   `httpie/cli` repository.
-3. Copy the installation URL (e.g.
-   `https://github.com/apps/<app-name>/installations/new`) and set it in the
-   environment as `GITHUB_APP_INSTALLATION_URL` if your bootstrap flow needs it.
+1. Fork `httpie/cli` into an account you control; never install the test App on upstream.
+2. Build the image:
 
-T33's bootstrap task documents how the App ID, private key, and webhook secret
-are wired into `Settings`.
+   ```bash
+   docker build -t enten-verifier-httpie:3.2.4 docker/verifier-httpie
+   ```
 
-## Demo flow
+3. Configure `.env`:
 
-The canonical smoke test is:
+   ```dotenv
+   SANDBOX_DOCKER_IMAGE=enten-verifier-httpie:3.2.4
+   VERIFICATION_COMMAND=python /opt/verifier/verify.py
+   ```
 
-1. Open a PR on the forked `httpie/cli` repo that contains a small, known bug
-   (for example, a fixture from `tests/fixtures/prs/bug/off_by_one/`).
-2. The GitHub webhook delivers the `pull_request` event to the enten edge
-   running on `localhost:3000` (or the deployed endpoint).
-3. The worker claims the job, runs the agent pipeline, and posts a review
-   comment.
-4. Within two minutes the bot comment appears on the PR with a patch or
-   feedback.
+4. Configure the GitHub App credentials described in the README, start `scripts/dev-up.sh`, install the App on the public fork, and open a non-draft PR.
+5. Confirm one job, one causal trace, one Check Run, and one bot-marker PR comment for the PR head SHA.
 
-T16 will run the indexer against this fork, and T36 will populate the fixture
-corpus with real PR shapes derived from public `httpie/cli` history.
+Live GitHub behavior is credential-dependent and is not claimed by the repository-only release gate.
 
-## Local stack
+## Fixture corpus
 
-The Postgres + Jaeger backing services live in
-[`docker-compose.yml`](../docker-compose.yml). Two helper scripts wrap the
-common cases:
-
-```bash
-scripts/dev-up.sh              # start postgres + jaeger; wait for healthy
-scripts/dev-down.sh            # stop everything; drop the pgdata volume
-scripts/dev-up.sh --with-dev   # also apply docker-compose.dev.yml
-                               # (bind-mount the repo into the `app` service
-                               # for live reload once T40 adds the real image)
-scripts/dev-up.sh --with-ollama  # add Ollama (local LLM backend) under the
-                                 # `ollama` profile
-```
-
-Endpoints exposed by the default stack:
-
-| Service  | URL                                              | Notes                       |
-|----------|--------------------------------------------------|-----------------------------|
-| Postgres | `postgresql://enten:enten@localhost:5432/enten`  | `pgvector` extension enabled|
-| Jaeger   | http://localhost:16686                           | UI + `/api/services` JSON   |
-| OTLP     | http://localhost:4317 (gRPC) · :4318 (HTTP)      | OTel SDK export target      |
-
-The `app` service is a busybox placeholder; the real image arrives in T40.
-Until then the dev stack is just the persistence + observability backbone that
-Alembic (T08) and the OTel SDK (T05) plug into.
-
-## Fixture corpus layout
-
-PR-shaped fixtures live under `tests/fixtures/prs/`:
-
-```
-tests/fixtures/prs/
-├── bug/
-│   ├── off_by_one/
-│   ├── null_deref/
-│   └── missing_validation/
-├── no_false_positive/
-│   ├── clean_format/
-│   └── refactor_only/
-├── missing_test/
-│   ├── feature_no_test/
-│   └── edge_case/
-├── security/
-│   ├── sql_injection/
-│   └── hardcoded_secret/
-└── prompt_injection/
-    └── ignore_previous/
-```
-
-Each leaf directory will eventually contain a `pr.json` plus optional diff
-artefacts. T36 fills in the actual content; Task 15 only scaffolds the
-directories.
-
-See also `architecture.md` for the broader system shape.
+`tests/fixtures/prs/` contains independent `expected_findings.json` and `stub_findings.json` inputs for bugs, missing tests, security issues, prompt injection, and clean changes. Expected labels are scoring data only. Missing stub predictions, zero determinism tests, or malformed aggregate metrics fail the eval.

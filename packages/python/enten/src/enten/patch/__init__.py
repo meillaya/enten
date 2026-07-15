@@ -78,23 +78,15 @@ SUBMIT_PATCH_SCHEMA = ToolSchema(
 def _validate_format(unified_diff: str) -> None:
     """Ensure ``unified_diff`` starts with ``--- a/`` and ``+++ b/``."""
     lines = unified_diff.splitlines()
-    if (
-        len(lines) < 2
-        or not lines[0].startswith("--- a/")
-        or not lines[1].startswith("+++ b/")
-    ):
-        raise PatchInvalidError(
-            "unified_diff must start with '--- a/' and '+++ b/'"
-        )
+    if len(lines) < 2 or not lines[0].startswith("--- a/") or not lines[1].startswith("+++ b/"):
+        raise PatchInvalidError("unified_diff must start with '--- a/' and '+++ b/'")
 
 
 def _validate_size(unified_diff: str) -> None:
     """Ensure ``unified_diff`` does not exceed ``MAX_PATCH_BYTES``."""
     size = len(unified_diff.encode("utf-8"))
     if size > MAX_PATCH_BYTES:
-        raise PatchSizeError(
-            f"unified_diff exceeds {MAX_PATCH_BYTES} bytes ({size})"
-        )
+        raise PatchSizeError(f"unified_diff exceeds {MAX_PATCH_BYTES} bytes ({size})")
 
 
 def _provider_for(handle: SandboxHandle) -> SandboxProvider:
@@ -202,9 +194,7 @@ async def apply_patch(sandbox: SandboxHandle, unified_diff: str) -> None:
     )
     if result.exit_code != 0:
         detail = result.stderr.strip() or result.stdout.strip()
-        raise PatchApplyError(
-            f"git apply failed (exit_code={result.exit_code}): {detail}"
-        )
+        raise PatchApplyError(f"git apply failed (exit_code={result.exit_code}): {detail}")
 
 
 __all__ = [

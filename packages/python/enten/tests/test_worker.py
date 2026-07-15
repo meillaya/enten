@@ -13,28 +13,28 @@ import pytest
 import pytest_asyncio
 
 from enten import worker as worker_mod
+from enten.github.models import CheckRun, CheckRunOutput, Comment
+from enten.migrations import apply_migrations
 from enten.queue import claim_next, enqueue, init_queue, mark_state
-from enten.worker import clean_stale_jobs, run_pipeline
+from enten.reporting.effects import FencedGitHubEffects, NoopEffects
+from enten.review.postgres_store import PostgresReviewStore
+from enten.review.store import JsonReviewStore
+from enten.worker import build_pipeline_dependencies, clean_stale_jobs, run_pipeline
 
-MIGRATION_PATH = Path(__file__).parents[4] / "migrations" / "0001_init.sql"
+MIGRATIONS = Path(__file__).parents[4] / "migrations"
 
 
 async def _reset_schema(pool: Any) -> None:
     """Drop all application tables so each test starts from a clean slate."""
     async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            DROP TABLE IF EXISTS sandbox_runs, fixtures, llm_calls,
-                                 pr_reviews, jobs CASCADE
-            """
-        )
+        await conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        await conn.execute("DROP SCHEMA IF EXISTS vec CASCADE")
 
 
 async def _apply_migration(pool: Any) -> None:
     """Run the T08 migration SQL against a fresh testcontainers pool."""
-    sql = MIGRATION_PATH.read_text()
     async with pool.acquire() as conn:
-        await conn.execute(sql)
+        await apply_migrations(conn, MIGRATIONS)
 
 
 @pytest_asyncio.fixture
@@ -46,8 +46,9 @@ async def migrated_db(db_session: Any) -> Any:
     yield db_session
 
 
-async def test_worker_picks_up_job_and_transitions_to_done(migrated_db: Any) -> None:
-    """A queued job is claimed and transitions through the stub pipeline to done."""
+async def test_worker_picks_up_job_and_transitions_to_done(
+    migrated_db: Any, tmp_path: Path
+) -> None:
     run_id = await enqueue({"kind": "pr_review", "payload": {"pr_number": 1}})
 
     job = await claim_next("worker-test")
@@ -55,7 +56,18 @@ async def test_worker_picks_up_job_and_transitions_to_done(migrated_db: Any) -> 
     assert job["run_id"] == run_id
     assert job["state"] == "indexing"
 
-    await run_pipeline(run_id)
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "app.py").write_text("x = 1\n", encoding="utf-8")
+    await run_pipeline(
+        run_id,
+        dependencies=build_pipeline_dependencies(
+            run_id,
+            generation=job["generation"],
+            store_path=tmp_path / "reviews.json",
+        ),
+        repository_path=repository,
+    )
 
     async with migrated_db["pool"].acquire() as conn:
         row = await conn.fetchrow("SELECT state, attempts FROM jobs WHERE run_id = $1", run_id)
@@ -63,6 +75,48 @@ async def test_worker_picks_up_job_and_transitions_to_done(migrated_db: Any) -> 
     assert row is not None
     assert row["state"] == "done"
     assert row["attempts"] == 0
+
+
+def test_production_dependencies_use_fenced_postgres_state() -> None:
+    class Client:
+        async def create_check_run(
+            self,
+            owner: str,
+            repo: str,
+            sha: str,
+            conclusion: str,
+            output: CheckRunOutput,
+        ) -> CheckRun:
+            raise AssertionError((owner, repo, sha, conclusion, output))
+
+        async def post_pr_comment(
+            self,
+            owner: str,
+            repo: str,
+            number: int,
+            body: str,
+            marker: str = "<!-- enten-bot -->",
+        ) -> Comment:
+            raise AssertionError((owner, repo, number, body, marker))
+
+    dependencies = build_pipeline_dependencies(
+        "queue-run-1",
+        generation=7,
+        github_client=Client(),
+    )
+
+    assert isinstance(dependencies.store, PostgresReviewStore)
+    assert isinstance(dependencies.effects, FencedGitHubEffects)
+
+
+def test_explicit_local_store_remains_file_backed(tmp_path: Path) -> None:
+    dependencies = build_pipeline_dependencies(
+        "local-run-1",
+        effects=NoopEffects(),
+        store_path=tmp_path / "reviews.json",
+    )
+
+    assert isinstance(dependencies.store, JsonReviewStore)
 
 
 async def test_worker_retries_on_exception(
@@ -83,7 +137,12 @@ async def test_worker_retries_on_exception(
     try:
         await worker_mod.run_pipeline(run_id)
     except Exception as exc:
-        await worker_mod.mark_failed(run_id, exc, retry=True)
+        await worker_mod.mark_failed(
+            run_id,
+            exc,
+            retry=True,
+            generation=job["generation"],
+        )
 
     async with migrated_db["pool"].acquire() as conn:
         row = await conn.fetchrow("SELECT state, attempts FROM jobs WHERE run_id = $1", run_id)
@@ -113,10 +172,12 @@ async def test_worker_fails_permanently_after_three_attempts(
         try:
             await worker_mod.run_pipeline(run_id)
         except Exception as exc:
-            if job["attempts"] < 3:
-                await worker_mod.mark_failed(run_id, exc, retry=True)
-            else:
-                await worker_mod.mark_state(run_id, "failed")
+            await worker_mod.mark_failed(
+                run_id,
+                exc,
+                retry=True,
+                generation=job["generation"],
+            )
 
     async with migrated_db["pool"].acquire() as conn:
         row = await conn.fetchrow("SELECT state, attempts FROM jobs WHERE run_id = $1", run_id)
@@ -146,3 +207,49 @@ async def test_clean_stale_jobs_resets_stale_indexing_job(migrated_db: Any) -> N
     assert row is not None
     assert row["state"] == "queued"
     assert "stale" in row["last_error"]
+
+
+@pytest.mark.parametrize(
+    ("app_id", "private_key", "missing_name"),
+    [
+        (None, Path("/tmp/app.pem"), "GITHUB_APP_ID"),
+        (123, None, "GITHUB_APP_PRIVATE_KEY_PATH"),
+    ],
+)
+def test_production_worker_fails_closed_without_github_app_credentials(
+    app_id: int | None,
+    private_key: Path | None,
+    missing_name: str,
+) -> None:
+    from enten.config import Settings
+
+    settings = Settings.model_validate(
+        {
+            "github_app_id": app_id,
+            "github_app_private_key_path": private_key,
+        }
+    )
+
+    with pytest.raises(worker_mod.WorkerConfigurationError, match=missing_name):
+        worker_mod.build_production_github_client(settings)
+
+
+def test_worker_parses_trusted_verification_command() -> None:
+    from enten.config import Settings
+
+    settings = Settings(verification_command="pytest -q 'tests/unit tests'")
+
+    assert worker_mod.parse_verification_command(settings) == (
+        "pytest",
+        "-q",
+        "tests/unit tests",
+    )
+
+
+def test_worker_rejects_empty_verification_command() -> None:
+    from enten.config import Settings
+
+    settings = Settings(verification_command="   ")
+
+    with pytest.raises(worker_mod.WorkerConfigurationError, match="VERIFICATION_COMMAND"):
+        worker_mod.parse_verification_command(settings)

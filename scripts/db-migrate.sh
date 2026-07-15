@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-docker compose exec -T postgres mkdir -p /workspace/migrations
+: "${DATABASE_URL:=postgresql+asyncpg://enten:enten@localhost:${POSTGRES_HOST_PORT:-5432}/enten}"
 
-for migration in migrations/0001_init.sql migrations/0002_pgvector.sql; do
-    docker compose cp "$migration" "postgres:/workspace/$migration"
-    docker compose exec -T postgres psql -U enten -d enten -f "/workspace/$migration"
-done
+uv run --project packages/python/enten python -m enten.migrations \
+    --database-url "$DATABASE_URL" \
+    --migrations migrations \
+    apply --baseline-existing

@@ -1,5 +1,0 @@
-Task 40 verification:
-- Files: Dockerfile, fly.toml, railway.toml, .dockerignore, packages/ts/app/src/server.ts
-- Commit: pending
-- Tests: N/A
-- Status: PASS (all required deliverables present)

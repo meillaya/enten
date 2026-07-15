@@ -1,14 +1,3 @@
-# no real LLM in CI — all tests use stubbed providers / no network calls
-# to the GitHub API or any LLM backend.
-#
-# CI matrix for the enten monorepo's own code:
-#   * python-test : Py 3.11 / 3.12  ×  ubuntu-latest / macos-latest  (4 combos)
-#   * ts-test     : Node 20 / 22    ×  ubuntu-latest / macos-latest  (4 combos)
-#
-# Two independent jobs — a failing Python build never blocks the TS side
-# and vice versa. Concurrency group cancels superseded runs on the same
-# ref so force-pushes don't burn minutes of runner time.
-
 name: CI
 
 on:
@@ -17,201 +6,170 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel any in-flight run for the same ref when a new commit lands.
-# Keeps CI minutes under control when someone force-pushes a branch
-# five times in two minutes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DATABASE_URL: postgresql+asyncpg://enten:enten@localhost:5433/enten
+  GITHUB_APP_ID: "0"
+  GITHUB_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nSTUB\n-----END RSA PRIVATE KEY-----"
+  GITHUB_WEBHOOK_SECRET: stub-webhook-secret
+
 jobs:
-  python-test:
-    name: python (${{ matrix.python-version }} / ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  python:
+    name: python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-        os: [ubuntu-latest, macos-latest]
-        # Explicit include so the matrix product is unambiguous in CI
-        # logs (4 rows: 3.11/ubuntu, 3.11/macos, 3.12/ubuntu, 3.12/macos).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: enten
+          POSTGRES_PASSWORD: enten
+          POSTGRES_DB: enten
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U enten -d enten"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v6
         with:
-          version: "latest"
-
-      # uv's own dependency cache — keyed off uv.lock so a lockfile
-      # change busts the cache automatically. Restored before sync
-      # so the sync step can reuse wheels.
-      - name: Cache uv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-${{ matrix.python-version }}-
-            uv-${{ runner.os }}-
-
-      - name: Sync workspace deps
-        run: uv sync --extra test
-
-      - name: Ruff lint
-        run: uv run ruff check .
-
-      # mypy is best-effort for now — T03+ lands typed config and
-      # the rest of the package has gradually-accumulating hints.
-      # Failing mypy must NOT block the matrix.
-      - name: mypy (best-effort)
-        continue-on-error: true
-        run: uv run mypy packages/python/enten/src
-
-      - name: Pytest with coverage gate
+          version: "0.10.4"
+          enable-cache: true
+      - name: Sync Python dependencies
+        run: uv sync --project packages/python/enten --all-groups --locked
+      - name: Install gitleaks 8.30.1
         run: |
-          bash scripts/check-coverage.sh
-        env:
-          # Stub values — the public CI never reaches a real
-          # GitHub App. LLM calls are intercepted by T06's
-          # no_llm_calls autouse fixture.
-          GITHUB_APP_ID: "0"
-          GITHUB_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nSTUB\n-----END RSA PRIVATE KEY-----"
-          GITHUB_WEBHOOK_SECRET: "stub-webhook-secret"
-
-      - name: Upload coverage artifact
+          curl --fail --silent --show-error --location \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          test "$(gitleaks version)" = "8.30.1"
+      - name: Ruff 0.15.18
+        run: uvx --from ruff==0.15.18 ruff check .
+      - name: Python tests and coverage
+        run: ENTEN_COVERAGE_SCOPE=python bash scripts/check-coverage.sh
+      - name: Permission policy
+        if: matrix.python-version == '3.12'
+        run: make permissions
+      - name: Upload Python reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-python-${{ matrix.python-version }}-${{ matrix.os }}
-          path: |
-            packages/python/enten/coverage.xml
-            packages/python/enten/.coverage
-            packages/python/enten/htmlcov
+          name: python-reports-${{ matrix.python-version }}
+          path: /tmp/enten-coverage
           retention-days: 7
-          if-no-files-found: ignore
-
-  ts-test:
-    name: ts (node ${{ matrix.node-version }} / ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: ["20", "22"]
-        os: [ubuntu-latest, macos-latest]
-        # Explicit include so the matrix product is unambiguous
-        # (4 rows: 20/ubuntu, 20/macos, 22/ubuntu, 22/macos).
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      # Pnpm is pinned to the exact version the lockfile was generated
-      # with (11.10.0). Newer pnpm majors may rewrite the lockfile.
-      - name: Install pnpm
-        run: npm i -g pnpm@11.10.0
-
-      # node_modules is huge and re-installing it from scratch on
-      # every matrix combo is ~30s of network we can skip.
-      # Keyed off pnpm-lock.yaml so a dep bump invalidates the cache.
-      - name: Cache pnpm store + node_modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            packages/ts/*/node_modules
-            ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-${{ runner.os }}-${{ matrix.node-version }}-
-            pnpm-${{ runner.os }}-
-
-      - name: pnpm install (frozen lockfile)
-        run: pnpm install --frozen-lockfile
-
-      # Lint is best-effort: many workspaces don't ship an eslint
-      # config yet. The package.json's `lint` script is currently
-      # `echo 'lint: not configured (T07 will add eslint/biome)'`
-      # which exits 0, but if a future workspace removes the
-      # script entirely pnpm -r will fail with "no script". The
-      # `|| true` shields us from both cases.
-      - name: Lint (best-effort)
-        continue-on-error: true
-        run: pnpm -r run lint || true
-
-      - name: Typecheck (tsc --noEmit)
-        run: pnpm -r exec tsc --noEmit
-
-      - name: Vitest with coverage
-        run: pnpm -r --filter '@enten/app' exec vitest run --coverage
-
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-ts-node${{ matrix.node-version }}-${{ matrix.os }}
-          path: |
-            packages/ts/app/coverage
-          retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   python-eval-smoke:
-    name: python eval smoke (3 fixtures / stub LLM)
+    name: python eval smoke
     runs-on: ubuntu-latest
-    needs: python-test
+    needs: python
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v6
         with:
-          version: "latest"
-
-      - name: Cache uv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-3.12-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-3.12-
-            uv-${{ runner.os }}-
-
-      - name: Sync workspace deps
-        run: uv sync --extra test
-
-      - name: Run eval smoke corpus
-        run: |
-          uv run enten eval --corpus tests/fixtures/prs/smoke --report eval-smoke.json --stub-llm
-
-      - name: Check eval thresholds
-        run: |
-          python scripts/eval-threshold-check.py eval-smoke.json
+          version: "0.10.4"
+          enable-cache: true
+      - name: Sync Python dependencies
+        run: uv sync --project packages/python/enten --all-groups --locked
+      - name: Run three-fixture eval
+        run: >-
+          uv run --project packages/python/enten enten eval
+          --corpus tests/fixtures/prs/smoke
+          --report /tmp/enten-eval-smoke.json
+          --stub-llm
+      - name: Enforce eval thresholds
         env:
-          EVAL_PRECISION_MIN: "0.5"
-          EVAL_RECALL_MIN: "0.5"
-          EVAL_FPR_MAX: "0.5"
-
-      - name: Upload eval smoke report
+          EVAL_PRECISION_MIN: ${{ vars.EVAL_PRECISION_MIN || '0.5' }}
+          EVAL_RECALL_MIN: ${{ vars.EVAL_RECALL_MIN || '0.5' }}
+          EVAL_FPR_MAX: ${{ vars.EVAL_FPR_MAX || '0.5' }}
+        run: uv run scripts/eval-threshold-check.py /tmp/enten-eval-smoke.json
+      - name: Upload eval report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eval-smoke-report
-          path: eval-smoke.json
+          path: /tmp/enten-eval-smoke.json
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: error
+
+  typescript:
+    name: typescript node 22
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: enten
+          POSTGRES_PASSWORD: enten
+          POSTGRES_DB: enten
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U enten -d enten"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install TypeScript dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: make typecheck
+      - name: Build
+        run: make build
+      - name: Test
+        run: make test-ts
+      - name: Coverage
+        run: ENTEN_COVERAGE_SCOPE=typescript bash scripts/check-coverage.sh
+      - name: Dependency audit
+        run: pnpm audit --audit-level=low
+      - name: Upload TypeScript coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-coverage
+          path: packages/ts/app/coverage
+          retention-days: 7
+          if-no-files-found: error
+
+  release-secrets:
+    name: release secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks 8.30.1
+        run: |
+          curl --fail --silent --show-error --location \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          test "$(gitleaks version)" = "8.30.1"
+      - name: Scan history and release archive
+        run: make security

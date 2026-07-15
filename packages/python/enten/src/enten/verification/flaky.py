@@ -8,16 +8,31 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+from enten.sandbox.models import ExecResult
+
+SelectorT = TypeVar("SelectorT")
+
+
+class RunSummary(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    exit_code: int | None = None
+    passed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    errors: int = 0
+    total: int = 0
 
 
 class Run(BaseModel):
     """A single sandbox run in a flaky-test series."""
 
     exit_code: int
-    summary: dict[str, Any]
+    summary: RunSummary
     duration_ms: int
     sandbox_id: str
 
@@ -35,33 +50,41 @@ class SandboxHandle(Protocol):
 
     @property
     def id(self) -> str: ...
-    async def destroy(self) -> None: ...
 
 
 class SandboxFactory(Protocol):
     """Minimal sandbox factory interface used by the flaky handler."""
 
-    async def create(self) -> SandboxHandle: ...
+    async def create(self, repo_files: dict[str, str]) -> SandboxHandle: ...
+    async def run(
+        self,
+        handle: SandboxHandle,
+        cmd: list[str],
+        timeout_seconds: int = 120,
+    ) -> ExecResult: ...
+    async def upload(
+        self,
+        handle: SandboxHandle,
+        files: dict[str, str | bytes],
+    ) -> None: ...
+    async def destroy(self, handle: SandboxHandle) -> None: ...
 
 
-Runner = Callable[[SandboxHandle, Any], Awaitable[Any]]
+class RunnerResult(Protocol):
+    exit_code: int
 
 
-def _result_to_summary(result: Any) -> dict[str, Any]:
-    """Convert a runner result into a plain dict for storage."""
-    if isinstance(result, BaseModel):
-        return result.model_dump()
-    if hasattr(result, "_asdict"):  # namedtuple
-        return result._asdict()
-    if isinstance(result, dict):
-        return dict(result)
-    return {"value": str(result)}
+Runner = Callable[[SandboxHandle, SelectorT], Awaitable[RunnerResult]]
+
+
+def _result_to_summary(result: RunnerResult) -> RunSummary:
+    return RunSummary(exit_code=result.exit_code)
 
 
 async def run_with_flaky_check(
     sandbox_factory: SandboxFactory,
-    runner: Runner,
-    test_selector: Any,
+    runner: Runner[SelectorT],
+    test_selector: SelectorT,
     *,
     runs: int = 3,
 ) -> FlakyRunSummary:
@@ -70,19 +93,21 @@ async def run_with_flaky_check(
     Each run uses a separate sandbox to avoid state carry-over. Sandboxes are
     destroyed even when the runner raises an infrastructure error.
     """
+    if runs < 1:
+        raise ValueError("runs must be positive")
     completed_runs: list[Run] = []
     error_occurred = False
 
     for _ in range(runs):
         handle: SandboxHandle | None = None
         try:
-            handle = await sandbox_factory.create()
+            handle = await sandbox_factory.create({})
             start = time.monotonic()
             result = await runner(handle, test_selector)
             duration_ms = int((time.monotonic() - start) * 1000)
             completed_runs.append(
                 Run(
-                    exit_code=getattr(result, "exit_code", 1),
+                    exit_code=result.exit_code,
                     summary=_result_to_summary(result),
                     duration_ms=duration_ms,
                     sandbox_id=handle.id,
@@ -93,7 +118,7 @@ async def run_with_flaky_check(
         finally:
             if handle is not None:
                 try:
-                    await handle.destroy()
+                    await sandbox_factory.destroy(handle)
                 except Exception:
                     error_occurred = True
 
@@ -108,10 +133,10 @@ async def run_with_flaky_check(
 
     if pass_count == runs:
         outcome: Literal["pass", "flaky", "fail"] = "pass"
-    elif pass_count == 0:
-        outcome = "fail"
-    else:
+    elif pass_count * 3 >= runs * 2:
         outcome = "flaky"
+    else:
+        outcome = "fail"
 
     return FlakyRunSummary(
         runs=completed_runs,

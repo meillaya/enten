@@ -60,6 +60,24 @@ def _rrf_score(vector_rank: int, bm25_rank: int, k: int = 60) -> float:
     return 0.6 * (1 / (k + vector_rank)) + 0.4 * (1 / (k + bm25_rank))
 
 
+def _select_within_budget(
+    candidates: Sequence[RetrievedChunk],
+    *,
+    top_k: int,
+    token_budget: int,
+) -> list[RetrievedChunk]:
+    selected: list[RetrievedChunk] = []
+    used_tokens = 0
+    for chunk in candidates:
+        if used_tokens + chunk.tokens > token_budget:
+            continue
+        selected.append(chunk)
+        used_tokens += chunk.tokens
+        if len(selected) >= top_k:
+            break
+    return selected
+
+
 async def retrieve(
     query: str,
     repo_id: str,
@@ -146,17 +164,7 @@ async def retrieve(
     reranker = LLMRerank()
     candidates = await reranker.rerank(query, candidates)
 
-    selected: list[RetrievedChunk] = []
-    used_tokens = 0
-    for chunk in candidates:
-        if used_tokens + chunk.tokens > token_budget:
-            break
-        selected.append(chunk)
-        used_tokens += chunk.tokens
-        if len(selected) >= top_k:
-            break
-
-    return selected
+    return _select_within_budget(candidates, top_k=top_k, token_budget=token_budget)
 
 
 __all__ = [

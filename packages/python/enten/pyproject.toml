@@ -51,9 +51,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Filled in by T05 (config), T08 (db), etc. Keep empty for the scaffold.
 dev = []
-# T06 — pytest suite.
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -71,8 +69,8 @@ test = [
 enten = "enten.cli:app"
 
 [project.urls]
-"Homepage" = "https://github.com/enten/enten"
-"Issues" = "https://github.com/enten/enten/issues"
+"Homepage" = "https://github.com/Meillaya/enten"
+"Issues" = "https://github.com/Meillaya/enten/issues"
 
 # ─── Hatch build backend ────────────────────────────────────────────────
 [build-system]

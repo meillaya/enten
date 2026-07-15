@@ -1,5 +1,8 @@
 {
   "action": "opened",
+  "installation": {
+    "id": 987654
+  },
   "number": 42,
   "pull_request": {
     "url": "https://api.github.com/repos/octocat/hello-world/pulls/42",

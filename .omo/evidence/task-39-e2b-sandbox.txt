@@ -1,5 +1,0 @@
-Task 39 verification:
-- Files: packages/python/enten/src/enten/sandbox/e2b.py
-- Commit: pending
-- Tests: packages/python/enten/tests/test_e2b_sandbox.py
-- Status: PASS (all required deliverables present)

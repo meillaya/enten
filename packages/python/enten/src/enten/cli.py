@@ -1,16 +1,18 @@
 """enten CLI entry point.
 
-Exposes the top-level ``enten`` command tree including the eval harness
-(T37), worker loop, and future plan/exec dispatch.
+Exposes local review, cost reporting, evaluation, and the production worker.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import shlex
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
+import anyio
 import typer
 
 if TYPE_CHECKING:
@@ -23,10 +25,12 @@ app = typer.Typer(
     add_completion=False,
 )
 
+DEFAULT_REVIEW_STORE = Path(".enten/reviews.json")
+
 
 @app.command()
 def main() -> None:
-    """Print the canonical greeting. Placeholder for the real CLI tree."""
+    """Print the canonical greeting."""
     typer.echo("enten")
 
 
@@ -36,6 +40,121 @@ def worker(poll_interval: int = 5) -> None:
     from enten.worker import main
 
     asyncio.run(main(poll_interval=poll_interval))
+
+
+@app.command(name="review")
+def review_command(
+    repo: Annotated[
+        Path,
+        typer.Option(
+            "--repo",
+            exists=True,
+            file_okay=False,
+            resolve_path=True,
+            help="Local public repository checkout to review.",
+        ),
+    ],
+    pr_number: Annotated[int, typer.Option("--pr", min=0, help="Pull request number.")] = 0,
+    sha: Annotated[str | None, typer.Option("--sha", help="Reviewed head commit SHA.")] = None,
+    verify_command: Annotated[
+        str,
+        typer.Option(
+            "--verify-command",
+            help="Argv-only verification command (no shell expansion).",
+        ),
+    ] = "python -m compileall -q .",
+    store_path: Annotated[
+        Path,
+        typer.Option("--store-path", help="Canonical local ReviewRun store."),
+    ] = DEFAULT_REVIEW_STORE,
+) -> None:
+    """Review a local checkout through the same stage machine as the worker."""
+    from enten.pipeline import JsonReviewStore, PipelineDependencies, execute_review
+    from enten.reporting.effects import NoopEffects
+    from enten.review.local import LocalFindingsGenerator, LocalVerifier
+    from enten.review.run import ReviewRequest
+
+    command = tuple(shlex.split(verify_command))
+    if not command:
+        raise typer.BadParameter(
+            "verification command cannot be empty",
+            param_hint="--verify-command",
+        )
+    resolved_sha = sha or _local_content_sha(repo)
+    request = ReviewRequest(
+        repository_id=str(repo),
+        repository_full_name=None,
+        pr_number=pr_number,
+        head_sha=resolved_sha,
+        repository_path=repo,
+        public_repository=True,
+        local_repository=True,
+        verification_command=command,
+    )
+    result = anyio.run(
+        execute_review,
+        request,
+        PipelineDependencies(
+            store=JsonReviewStore(store_path),
+            generator=LocalFindingsGenerator(),
+            verifier=LocalVerifier(),
+            effects=NoopEffects(),
+        ),
+    )
+    verdict = result.run.verification.verdict if result.run.verification else "error"
+    typer.echo(
+        json.dumps(
+            {
+                "review_id": result.run.review_id,
+                "stage": result.run.stage,
+                "verdict": verdict,
+                "replayed": result.replayed,
+            },
+            sort_keys=True,
+        )
+    )
+    if verdict in {"fail", "error"}:
+        raise typer.Exit(1)
+
+
+@app.command(name="cost")
+def cost_command(
+    pr_number: Annotated[
+        int | None,
+        typer.Option("--pr", min=0, help="Filter by PR number."),
+    ] = None,
+    repository_id: Annotated[
+        str | None,
+        typer.Option("--repo", help="Filter by canonical repository ID."),
+    ] = None,
+    store_path: Annotated[
+        Path,
+        typer.Option("--store-path", help="Canonical local ReviewRun store."),
+    ] = DEFAULT_REVIEW_STORE,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+) -> None:
+    """Report tokens and USD recorded in canonical ReviewRun artifacts."""
+    from enten.pipeline import JsonReviewStore, summarize_cost
+
+    async def _summarize() -> dict[str, int | str]:
+        return await summarize_cost(
+            JsonReviewStore(store_path),
+            pr_number=pr_number,
+            repository_id=repository_id,
+        )
+
+    totals = anyio.run(_summarize)
+    if json_output:
+        typer.echo(json.dumps(totals, sort_keys=True))
+        return
+    typer.echo(
+        (
+            "reviews={reviews} tokens_in={tokens_in} tokens_out={tokens_out} cost_usd={cost_usd}"
+        ).format(**totals)
+    )
 
 
 @app.command(name="eval")
@@ -51,7 +170,7 @@ def eval_command(
     threshold: float = typer.Option(
         0.0,
         "--threshold",
-        help="Minimum aggregate precision required (placeholder for CI gating).",
+        help="Minimum aggregate precision required.",
     ),
 ) -> None:
     """Run the eval harness against a fixture corpus."""
@@ -91,6 +210,16 @@ def _aggregate_precision(report: EvalReport) -> float:
     total_correct = sum(m.n_correct for m in report.by_kind.values())
     total_bot = total_correct + sum(m.n_hallucinated for m in report.by_kind.values())
     return total_correct / total_bot if total_bot else 0.0
+
+
+def _local_content_sha(repository: Path) -> str:
+    digest = hashlib.sha256()
+    for source in sorted(repository.rglob("*")):
+        if not source.is_file() or ".git" in source.relative_to(repository).parts:
+            continue
+        digest.update(source.relative_to(repository).as_posix().encode())
+        digest.update(source.read_bytes())
+    return digest.hexdigest()
 
 
 if __name__ == "__main__":

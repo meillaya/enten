@@ -19,9 +19,7 @@ def _validate_output(output: dict[str, Any]) -> None:
 
     summary = output.get("summary", "")
     if len(summary) > MAX_SUMMARY_LENGTH:
-        raise ValueError(
-            f"output.summary exceeds {MAX_SUMMARY_LENGTH} characters: {len(summary)}"
-        )
+        raise ValueError(f"output.summary exceeds {MAX_SUMMARY_LENGTH} characters: {len(summary)}")
 
 
 def _to_check_run_output(output: dict[str, Any]) -> CheckRunOutput:
@@ -57,6 +55,4 @@ async def update_check_run(
 ) -> CheckRun:
     """Update an existing check run with a new conclusion and output."""
     check_output = _to_check_run_output(output)
-    return await client.update_check_run(
-        owner, repo, int(check_run_id), conclusion, check_output
-    )
+    return await client.update_check_run(owner, repo, int(check_run_id), conclusion, check_output)

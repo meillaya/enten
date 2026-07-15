@@ -18,6 +18,12 @@ from enten.config import LLMProvider, SandboxProvider, Settings
 from enten.redaction import REDACT_KEYS, REDACTED, redact_dict, redact_value
 
 
+@pytest.fixture(autouse=True)
+def isolate_settings_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for field_name in Settings.model_fields:
+        monkeypatch.delenv(field_name.upper(), raising=False)
+
+
 # ── Settings: defaults ──────────────────────────────────────────────────
 def test_settings_returns_documented_defaults() -> None:
     """``Settings()`` with no env file applies the documented defaults.
@@ -36,6 +42,8 @@ def test_settings_returns_documented_defaults() -> None:
     assert s.github_app_slug == "enten-bot"
     assert s.llm_provider == LLMProvider.OPENAI_COMPAT
     assert s.sandbox_provider == SandboxProvider.DOCKER
+    assert s.sandbox_docker_image is None
+    assert s.verification_command == "python -m compileall -q ."
     # Secrets default to None rather than raising, so the agent boots
     # in environments that don't have them yet.
     assert s.github_webhook_secret is None

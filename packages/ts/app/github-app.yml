@@ -1,14 +1,12 @@
 name: enten-bot
-url: https://github.com/enten/enten
+url: https://github.com/Meillaya/enten
 hook_attributes:
   url: $RENDER_EXTERNAL_URL/webhook
   active: true
-redirect_url: https://github.com/enten/enten
+redirect_url: https://github.com/Meillaya/enten
 public: false
 default_events:
   - pull_request
-  - pull_request_review
-  - issue_comment
 default_permissions:
   pull_requests: write
   checks: write

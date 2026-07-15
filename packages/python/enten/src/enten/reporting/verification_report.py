@@ -192,9 +192,7 @@ def render_report(review_run: PRReviewRun) -> ReportOutput:
     )
 
     markdown = render_pr_comment(review_for_comment)
-    validated = validate_review_output(
-        _plain_text_for_validation(markdown), list(available)
-    )
+    validated = validate_review_output(_plain_text_for_validation(markdown), list(available))
 
     if not validated.verified:
         markdown = _no_verifiable_findings_markdown(evidence)

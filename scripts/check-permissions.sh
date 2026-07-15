@@ -1,55 +1,33 @@
 #!/usr/bin/env bash
-# ─────────────────────────────────────────────────────────────────────────
-# scripts/check-permissions.sh
-#
-# Audit GitHub App permission scope. The bot must never request write
-# access to repository contents or GitHub Actions. This script scans the
-# manifest, permission documentation, and deployment configuration for
-# forbidden scope strings and exits non-zero if any are found.
-#
-# Usage:
-#   bash scripts/check-permissions.sh
-# ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-FORBIDDEN=(
-    "contents: write"
-    "contents.write"
-    "actions: write"
-)
-
-FILES=(
-    packages/ts/app/github-app.yml
-    docs/permissions.md
-    fly.toml
-    railway.toml
-    Dockerfile
-)
-
-fail=0
-
-for file in "${FILES[@]}"; do
-    if [[ ! -f "$file" ]]; then
-        continue
-    fi
-    for pattern in "${FORBIDDEN[@]}"; do
-        # Allow the patterns to appear in documentation that explicitly
-        # labels them as forbidden or denied; flag them everywhere else.
-        matches=$(grep -F "$pattern" "$file" 2>/dev/null | grep -Evi 'forbidden|denied|does not have|must not|why it is denied' || true)
-        if [[ -n "$matches" ]]; then
-            echo "FORBIDDEN: '$pattern' found in $file" >&2
-            echo "$matches" >&2
-            fail=1
-        fi
-    done
-done
-
-if [[ "$fail" -eq 1 ]]; then
-    echo "Permission audit failed: forbidden scope detected." >&2
-    exit 1
+MANIFEST="${PERMISSIONS_MANIFEST:-packages/ts/app/github-app.yml}"
+if [[ ! -f "$MANIFEST" ]]; then
+  printf 'FAIL: GitHub App manifest is missing: %s\n' "$MANIFEST" >&2
+  exit 1
 fi
 
-echo "Permission audit passed: no forbidden scope found."
+mapfile -t permissions < <(
+  awk '
+    /^default_permissions:[[:space:]]*$/ { in_permissions=1; next }
+    in_permissions && /^[^[:space:]]/ { exit }
+    in_permissions && /^  [a-z_]+:[[:space:]]+[^[:space:]]+[[:space:]]*$/ {
+      key=$1; value=$2; sub(/:$/, "", key); print key ":" value
+    }
+  ' "$MANIFEST"
+)
+
+expected=("checks:write" "metadata:read" "pull_requests:write")
+mapfile -t actual < <(printf '%s\n' "${permissions[@]}" | sort)
+mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
+if [[ "$(printf '%s\n' "${actual[@]}")" != "$(printf '%s\n' "${wanted[@]}")" ]]; then
+  printf 'FAIL: GitHub App permissions differ from the reviewed least-privilege set\n' >&2
+  printf 'Expected:\n  %s\n' "${wanted[*]}" >&2
+  printf 'Actual:\n  %s\n' "${actual[*]:-none}" >&2
+  exit 1
+fi
+
+printf 'Permission gate passed: checks:write, metadata:read, pull_requests:write.\n'

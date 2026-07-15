@@ -1,34 +1,19 @@
-# enten On-Call Rotation
+# Maintainer response policy
 
-> This project is currently maintained by a single developer. The fields
-> below are placeholders so the rotation can be expanded once the team
-> grows.
+`enten` is currently a community project without a staffed on-call rotation, SLA, PagerDuty schedule, or private escalation channel. Do not rely on this repository for an emergency response commitment.
 
-## Rotation
+## Reporting
 
-| Role | Primary | Secondary | Escalation |
-|------|---------|-----------|------------|
-| Current | (single developer) | (same) | (project owner / email) |
+- Security-sensitive reports should use the repository's GitHub Security Advisory flow when available; do not paste credentials, webhook payloads, private keys, or raw scanner matches into a public issue.
+- Operational defects may be filed as GitHub issues with redacted logs, the release commit SHA, Compose version, Docker version, and the failing runbook command.
+- GitHub App credentials must be revoked or rotated through GitHub first; opening an issue is not containment.
 
-## Contact
+## Maintainer checklist
 
-- **Primary:** ___________________
-- **Secondary:** ___________________
-- **Escalation:** ___________________
-- **Slack/Discord:** ___________________
-- **PagerDuty schedule:** ___________________
+1. Reproduce on a disposable repository and isolated Compose project.
+2. Preserve the job `run_id`, trace ID, claim generation, and redacted effect/checkpoint rows.
+3. Stop the worker before reconciling an `indeterminate` external effect.
+4. Run the relevant playbook in [`runbook.md`](runbook.md).
+5. Add a regression test before the repair and run `make check` before release.
 
-## Rotation rules
-
-- **Frequency:** ___________________ (e.g. weekly)
-- **Handoff time:** ___________________ (e.g. Monday 09:00 local time)
-- **Handoff checklist:**
-  1. Review open alerts from the previous rotation.
-  2. Confirm `scripts/healthcheck-all.sh` passes.
-  3. Check `scripts/error-budget-check.sh` for the last 24 hours.
-  4. Note any in-flight incidents in the on-call log.
-
-## Runbooks
-
-- Incident response: `docs/runbook.md`
-- Architecture and context: `docs/architecture.md`
+Future maintainers may add a real rotation only when named responders, contact paths, handoff time, and response expectations exist. Placeholder contact information is intentionally absent.

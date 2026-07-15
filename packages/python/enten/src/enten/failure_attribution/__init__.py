@@ -20,16 +20,18 @@ _FRAME_RE = re.compile(
     re.MULTILINE,
 )
 
-_DEFINITION_TYPES = frozenset({
-    "function_definition",
-    "class_definition",
-    "function_declaration",
-    "class_declaration",
-    "method_definition",
-    "export_statement",
-    "lexical_declaration",
-    "decorated_definition",
-})
+_DEFINITION_TYPES = frozenset(
+    {
+        "function_definition",
+        "class_definition",
+        "function_declaration",
+        "class_declaration",
+        "method_definition",
+        "export_statement",
+        "lexical_declaration",
+        "decorated_definition",
+    }
+)
 
 
 class Attribution(BaseModel):
@@ -264,9 +266,7 @@ async def attribute_failures(
             if symbol is not None:
                 symbol_kind, symbol_name, parent_symbol = symbol
 
-        blame_commit, blame_author, blame_message = await _git_blame(
-            sandbox_handle, file, line
-        )
+        blame_commit, blame_author, blame_message = await _git_blame(sandbox_handle, file, line)
 
         attributions.append(
             Attribution(

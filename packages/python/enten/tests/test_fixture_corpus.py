@@ -16,7 +16,13 @@ import pytest
 FIXTURE_ROOT = Path(__file__).resolve().parents[4] / "tests" / "fixtures" / "prs"
 REPO_ROOT = FIXTURE_ROOT.parents[2]
 
-REQUIRED_FILES = ("pr.json", "diff.patch", "expected_findings.json", "meta.json")
+REQUIRED_FILES = (
+    "pr.json",
+    "diff.patch",
+    "expected_findings.json",
+    "stub_findings.json",
+    "meta.json",
+)
 
 
 def _discover_fixtures() -> list[Path]:
@@ -34,7 +40,6 @@ def fixtures() -> list[Path]:
 
 
 def test_fixture_files_are_complete(fixtures: list[Path]) -> None:
-    """Every fixture directory must contain all four required files."""
     for fixture in fixtures:
         for name in REQUIRED_FILES:
             assert (fixture / name).is_file(), f"Missing {name} in {fixture}"
@@ -82,6 +87,12 @@ def test_fixture_expected_findings_shape(fixtures: list[Path]) -> None:
             assert not missing, f"{fixture} finding missing fields: {missing}"
 
 
+def test_fixture_predictions_are_independent_files(fixtures: list[Path]) -> None:
+    for fixture in fixtures:
+        predictions = json.loads((fixture / "stub_findings.json").read_text())
+        assert isinstance(predictions, list), f"{fixture} stub_findings is not a list"
+
+
 def test_fixture_corpus_count(fixtures: list[Path]) -> None:
     """The expanded corpus must contain at least ten fixtures."""
     assert len(fixtures) >= 10, f"Expected >= 10 fixtures, found {len(fixtures)}"
@@ -89,16 +100,22 @@ def test_fixture_corpus_count(fixtures: list[Path]) -> None:
 
 def test_no_real_secrets_in_fixtures() -> None:
     """gitleaks must report zero findings in the fixture corpus."""
+    version = subprocess.run(
+        ["gitleaks", "version"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert version.stdout.strip() == "8.30.1"
     report_path = Path("/tmp/gl.json")
     result = subprocess.run(
         [
             "gitleaks",
-            "detect",
-            "--no-git",
-            "--source",
-            str(REPO_ROOT / "tests" / "fixtures"),
+            "dir",
+            "--no-banner",
             "--report-path",
             str(report_path),
+            str(REPO_ROOT / "tests" / "fixtures"),
         ],
         capture_output=True,
         text=True,

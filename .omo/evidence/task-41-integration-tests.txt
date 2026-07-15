@@ -1,5 +1,0 @@
-Task 41 verification:
-- Files: packages/python/enten/tests/test_worker.py, packages/ts/app/tests/idempotency.test.ts
-- Commit: pending
-- Tests: packages/python/enten/tests/test_worker.py, packages/ts/app/tests/idempotency.test.ts
-- Status: PASS (all required deliverables present)

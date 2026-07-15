@@ -49,9 +49,7 @@ class GitHubClient:
         self.github_webhook_secret = settings.github_webhook_secret
         self.committer_email = settings.committer_email
         self.github_app_slug = settings.github_app_slug
-        self._rate_limit_bucket = _default_registry.get(
-            "github", capacity=100, refill_rate=1.0
-        )
+        self._rate_limit_bucket = _default_registry.get("github", capacity=100, refill_rate=1.0)
         self._client = httpx.AsyncClient(
             base_url=GITHUB_API_BASE,
             timeout=REQUEST_TIMEOUT,

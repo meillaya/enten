@@ -1,7 +1,11 @@
 [build]
-buildCommand = "uv sync"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "uv run enten worker & node packages/ts/app/dist/server.js & wait"
+preDeployCommand = "python -m enten.migrations apply --baseline-existing"
+startCommand = "node packages/ts/app/dist/server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
