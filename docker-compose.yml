@@ -75,6 +75,7 @@ services:
   worker:
     <<: *app-service
     command: ["enten", "worker"]
+    stop_grace_period: 15m
     environment:
       <<: *app-environment
       GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app.pem

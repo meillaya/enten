@@ -101,6 +101,8 @@ scripts/dev-down.sh --drop-data  # destructive, disposable environments only
 
 Do not remove unrelated Testcontainers sessions, k3d containers, images, caches, or volumes by pattern alone.
 
+Compose grants the worker a 15-minute shutdown grace period so a normal bounded claim can drain. A supervisor that uses a shorter timeout may terminate the worker; the expired lease is then charged to the retry budget and reclaimed by the next worker.
+
 ## Trace discontinuity
 
 A job with a missing, malformed, or mismatched authenticated carrier fails before pipeline execution. Compare the stored `jobs.trace_id`, payload `traceparent`, edge enqueue span, and worker consume span. Public inbound trace headers should never be the root of the trusted trace.

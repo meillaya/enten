@@ -22,7 +22,7 @@ external_effects: prepare → attempted → succeeded | indeterminate
 GitHub Check Run, then PR comment
 ```
 
-The web and metrics listeners are separate. The TypeScript process starts OpenTelemetry before constructing its apps and listeners, and closes listeners, Postgres, and OTel on shutdown. The Python worker has a separate process role and finishes its current claim before shutdown.
+The web and metrics listeners are separate. The TypeScript process starts OpenTelemetry before constructing its apps and listeners, and closes listeners, Postgres, and OTel on shutdown. The Python worker has a separate process role; Compose gives it 15 minutes to finish the current bounded claim. If a supervisor force-kills it instead, generation fencing and lease recovery make the claim retryable rather than silently complete.
 
 ## Trust boundaries
 

@@ -11,6 +11,7 @@ from opentelemetry import trace
 
 from enten.config import Settings
 from enten.github.client import GitHubClient
+from enten.migration_operations import asyncpg_url
 from enten.queue import init_queue
 from enten.review.contract import review_contract_digest
 from enten.review.remote import GitPublicCheckoutValidator, SandboxVerifier
@@ -82,7 +83,7 @@ async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
 
         remote_verifier = SandboxVerifier(get_provider(settings))
         pool = await asyncpg.create_pool(
-            settings.database_url,
+            asyncpg_url(settings.database_url),
             min_size=1,
             max_size=4,
         )

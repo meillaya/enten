@@ -351,3 +351,40 @@ def test_worker_rejects_empty_verification_command() -> None:
 
     with pytest.raises(worker_mod.WorkerConfigurationError, match="VERIFICATION_COMMAND"):
         worker_mod.parse_verification_command(settings)
+
+
+async def test_worker_bootstrap_normalizes_the_shipped_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from enten import _worker_runtime as runtime_mod
+    from enten.config import Settings
+
+    captured: dict[str, object] = {}
+
+    class FakeGitHubClient:
+        async def close(self) -> None:
+            captured["github_closed"] = True
+
+    async def create_pool(dsn: str, *, min_size: int, max_size: int) -> object:
+        captured.update(dsn=dsn, min_size=min_size, max_size=max_size)
+        return object()
+
+    monkeypatch.setattr(
+        runtime_mod,
+        "build_production_github_client",
+        lambda _settings: FakeGitHubClient(),
+    )
+    monkeypatch.setattr("enten.sandbox.factory.get_provider", lambda _settings: object())
+    monkeypatch.setattr(runtime_mod.asyncpg, "create_pool", create_pool)
+    monkeypatch.setattr(runtime_mod, "init_queue", lambda pool: captured.update(pool=pool))
+    settings = Settings(
+        sandbox_docker_image="example.test/verifier@sha256:" + "a" * 64,
+        database_url="postgresql+asyncpg://enten:enten@postgres:5432/enten",
+    )
+
+    runtime = await runtime_mod.bootstrap_worker(settings)
+
+    assert captured["dsn"] == "postgresql://enten:enten@postgres:5432/enten"
+    assert captured["min_size"] == 1
+    assert captured["max_size"] == 4
+    assert captured["pool"] is runtime.pool
