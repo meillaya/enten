@@ -17,6 +17,6 @@
     "dev": "pnpm -r --parallel --filter './packages/ts/*' dev"
   },
   "devDependencies": {
-    "typescript": "^5.6.0"
+    "typescript": "^7.0.2"
   }
 }
