@@ -184,8 +184,8 @@ The final image ran against GitHub App `5557296` on
 `meillaya/enten-test-repo`. The LLM path used OpenRouter with
 `deepseek/deepseek-v4.1-flash-1017`. Eight calls cost `$0.000320`.
 
-- LLM pass: head `0a31bdf`, check `124620650964` (`success`), comment
-  `6547440770`, exits `[0, 0, 0]`. The comment contained findings for
+- LLM pass: head `721e28d`, check `124615232770` (`success`), comment
+  `6547186304`, exits `[0, 0, 0]`. The comment contained findings for
   `review_target.py:2`.
 - LLM fail: head `22c8a34`, check `124621047563` (`failure`), exits
   `[1, 1, 1]`. The comment reported the `eval` finding and the syntax error in
