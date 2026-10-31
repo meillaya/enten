@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "enten - AI engineering agent (bilingual Python+TypeScript monorepo)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
 authors = [
     { name = "enten contributors" },
 ]

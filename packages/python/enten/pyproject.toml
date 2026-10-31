@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "enten - AI engineering agent (Python core)"
 readme = { text = "Python worker and CLI for enten, a deterministic pull-request review service. See https://github.com/Meillaya/enten.", content-type = "text/markdown" }
 requires-python = ">=3.11"
-license = { text = "MIT" }
 authors = [
     { name = "enten contributors" },
 ]
@@ -12,7 +11,6 @@ keywords = ["ai", "agent", "engineering", "automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

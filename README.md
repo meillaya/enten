@@ -110,7 +110,3 @@ production dependency audit.
 - [GitHub App permissions](docs/permissions.md)
 - [Verifier demo contracts](docs/demo-repo.md)
 - [Audit and fixes](docs/audit.md)
-
-## License
-
-MIT. See [LICENSE](LICENSE).
