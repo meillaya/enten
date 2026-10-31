@@ -34,7 +34,9 @@ async def public_pull_request_checkout(
 ) -> AsyncIterator[Path]:
     checkout = Path(tempfile.mkdtemp(prefix="enten-public-pr-"))
     public_url = f"https://github.com/{repository_full_name}.git"
-    pull_ref = f"refs/pull/{pr_number}/head"
+    # Fetch the exact requested SHA. A PR ref moves when the author pushes,
+    # so fetching it would make a legitimate retry fail after a new commit.
+    _ = pr_number
     try:
         await _git("init", "--quiet", str(checkout))
         await _git("-C", str(checkout), "remote", "add", "origin", public_url)
@@ -50,7 +52,7 @@ async def public_pull_request_checkout(
             "--depth=1",
             "--no-tags",
             public_url,
-            pull_ref,
+            head_sha,
         )
         pack_bytes = await run_sync(_pack_size_bytes, checkout)
         if pack_bytes > FETCH_PACK_MAX_BYTES:

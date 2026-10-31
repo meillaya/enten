@@ -74,20 +74,6 @@ class GitPublicCheckoutValidator:
             raise UnvalidatedRemoteCheckoutError(
                 f"checkout origin {origin!r} is not the canonical public GitHub URL"
             )
-        pull_ref = f"refs/pull/{request.pr_number}/head"
-        remote_ref = await _git(
-            "-c",
-            "credential.helper=",
-            "ls-remote",
-            "--exit-code",
-            public_url,
-            pull_ref,
-        )
-        remote_sha, separator, returned_ref = remote_ref.partition("\t")
-        if separator != "\t" or remote_sha != request.head_sha or returned_ref != pull_ref:
-            raise UnvalidatedRemoteCheckoutError(
-                "checkout does not match the public pull request ref"
-            )
 
 
 class SandboxVerifier:

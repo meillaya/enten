@@ -32,7 +32,7 @@ async def clean_db(db_session: Any) -> Any:
 
 
 def test_known_migration_hashes_match_raw_repository_bytes() -> None:
-    for filename in ("0001_init.sql", "0002_pgvector.sql"):
+    for filename in ("0001_init.sql", "0002_pgvector.sql", "0004_effect_reconciliation.sql"):
         raw = (MIGRATIONS / filename).read_bytes()
         assert hashlib.sha256(raw).hexdigest() == KNOWN_MIGRATION_HASHES[filename]
 
@@ -70,7 +70,7 @@ async def test_apply_is_atomic_and_concurrent_callers_share_one_ledger(clean_db:
         tasks.start_soon(apply_on_connection, first)
         tasks.start_soon(apply_on_connection, second)
 
-    assert sorted(len(result) for result in results) == [0, 3]
+    assert sorted(len(result) for result in results) == [0, 4]
     async with pool.acquire() as conn:
         ledger = await conn.fetch(
             "SELECT version, filename, checksum FROM schema_migrations ORDER BY version"
@@ -79,6 +79,7 @@ async def test_apply_is_atomic_and_concurrent_callers_share_one_ledger(clean_db:
         (1, "0001_init.sql"),
         (2, "0002_pgvector.sql"),
         (3, "0003_crash_consistency.sql"),
+        (4, "0004_effect_reconciliation.sql"),
     ]
 
 

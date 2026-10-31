@@ -43,6 +43,36 @@ def worker(poll_interval: int = 5) -> None:
     anyio.run(partial(main, poll_interval=poll_interval))
 
 
+@app.command(name="reconcile")
+def reconcile_command(
+    run_id: Annotated[str, typer.Option("--run-id", help="Failed queue run to repair.")],
+    check_id: Annotated[
+        int | None,
+        typer.Option("--check-id", help="Observed GitHub check run ID."),
+    ] = None,
+    comment_id: Annotated[
+        int | None,
+        typer.Option("--comment-id", help="Observed GitHub issue comment ID."),
+    ] = None,
+) -> None:
+    """Adopt observed GitHub effects and requeue the review."""
+    from enten.reconcile import ReconcileError, reconcile
+
+    try:
+        result = anyio.run(
+            partial(
+                reconcile,
+                run_id,
+                check_id=check_id,
+                comment_id=comment_id,
+            )
+        )
+    except ReconcileError as exc:
+        typer.echo(f"reconcile: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, sort_keys=True))
+
+
 @app.command(name="review")
 def review_command(
     repo: Annotated[

@@ -12,6 +12,9 @@ import asyncpg
 KNOWN_MIGRATION_HASHES: Final[dict[str, str]] = {
     "0001_init.sql": "bd93b1dc14fe04a30f55fb20e8a2728813821905ce566b97d251edd3d801433c",
     "0002_pgvector.sql": "66936808da3af9ac21fa41ed8575cf4d423c7c5e58e7203e4fd5e0bb65d6ae99",
+    "0004_effect_reconciliation.sql": (
+        "5108e4270c53e23ae75de01752725bf3bb68b1d228f99abd9b87324da745fef1"
+    ),
 }
 MIGRATION_NAME: Final = re.compile(r"^(?P<version>[0-9]{4})_[a-z0-9_]+\.sql$")
 LOCK_KEY: Final = 7_303_152_109_791_101_449

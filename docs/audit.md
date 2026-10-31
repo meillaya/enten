@@ -122,9 +122,10 @@ live run completed the full path.
   `checks: write`. It has no `contents` or `actions` permission. The parser test
   compares the exact set.
 - Public checkout uses the canonical HTTPS URL, disables credential helpers,
-  fetches only `refs/pull/<n>/head`, requires `HEAD == head_sha`, rejects
+  fetches the exact requested head SHA, requires `HEAD == head_sha`, rejects
   symlinks and submodules through the tree mode check, and enforces file count
-  and byte quotas before execution.
+  and byte quotas before execution. Fetching the exact SHA keeps a retry valid
+  after the author pushes another commit to the PR.
 - The Docker verifier uses a digest-pinned image, a read-only root filesystem,
   `network=none`, `cap_drop: ALL`, `no-new-privileges`, a non-root user, and
   CPU, memory, PID, time, and output caps. The defaults match the Docker
@@ -175,12 +176,45 @@ verdicts.
   `POST /webhook`, `jobs enqueue`, `pr_review.consume`, and the pipeline stages.
 - The public HTTPS origin served `/health` and `/ready`. `/metrics` stayed
   private.
+- Migration `0004_effect_reconciliation.sql` applied before the final matrix.
+
+### Full matrix on the final image
+
+The final image ran against GitHub App `5557296` on
+`meillaya/enten-test-repo`. The LLM path used OpenRouter with
+`deepseek/deepseek-v4.1-flash-1017`. Eight calls cost `$0.000320`.
+
+- LLM pass: head `0a31bdf`, check `124620650964` (`success`), comment
+  `6547440770`, exits `[0, 0, 0]`. The comment contained findings for
+  `review_target.py:2`.
+- LLM fail: head `22c8a34`, check `124621047563` (`failure`), exits
+  `[1, 1, 1]`. The comment reported the `eval` finding and the syntax error in
+  `broken_target.py`.
+- Flaky: head `5d8bb4f`, check `124615550578` (`neutral`), exits `[0, 1, 0]`.
+- Error: head `ed78988`, check `124615741365` (`failure`), exits `[]`, comment
+  reported an infrastructure error.
+- Crash recovery: the worker was killed while a job held a lease. After the
+  lease expired, a restarted worker reclaimed the job at generation 3 and
+  finished it (`pr_kywzdiqrgeze`, attempts 2).
+- Indeterminate check: a fault proxy forwarded the check POST to GitHub and
+  returned 503. The check existed (`124620650964`), the ledger recorded
+  `github-check=indeterminate`, and the job failed without a duplicate write.
+- Reconciliation: `enten reconcile --run-id pr_iyiekumniw6d --check-id
+  124620650964` verified the head and App, adopted the check, and requeued the
+  job. The worker posted the missing comment `6547440770` and marked the job
+  `done`. GitHub held exactly one check for the head.
+- Python tests, Ruff, Vitest, and the TypeScript build passed on the final
+  tree.
 
 ## Residual risk
 
-- The live GitHub App installation and write path were not exercised. No App
-  credentials were available, so Check Run and comment posting remain covered
-  by contract tests only.
+- The native Anthropic Messages client is unit tested but not live tested. The
+  configured Anthropic key was empty. The OpenAI-compatible path was live
+  tested through OpenRouter.
+- GitHub Actions quota was exhausted on the test account, so the CI workflow
+  could not run in that account. The same gates passed locally.
+- Reconciliation is operator-initiated. The worker stops safely on an
+  ambiguous effect and never adopts a receipt without an observed external ID.
 - The worker cannot run on Railway. A live verification test needs a Docker
   host, and Docker socket access is root-equivalent authority.
 - The default verifier runs `python -m compileall -q .`, which checks Python

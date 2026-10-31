@@ -57,10 +57,9 @@ The release accepts public GitHub repositories. The worker:
 
 1. derives `https://github.com/<owner>/<repo>.git` from the validated full name;
 2. disables interactive credentials and global Git configuration;
-3. fetches only `refs/pull/<number>/head`, with no tags and depth one;
+3. fetches the exact `head_sha`, with no tags and depth one;
 4. checks out detached and requires `HEAD == head_sha`;
-5. revalidates the canonical origin and remote pull request ref before
-   execution;
+5. revalidates the canonical origin and the detached head before execution;
 6. deletes the mode-0700 temporary checkout in a shielded cleanup block.
 
 Private repositories, arbitrary clone URLs, symlinks, submodules, binary

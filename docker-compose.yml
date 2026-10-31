@@ -79,6 +79,17 @@ services:
     environment:
       <<: *app-environment
       GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+      GITHUB_CA_BUNDLE: "${GITHUB_CA_BUNDLE:-}"
+      REVIEW_GENERATOR: "${REVIEW_GENERATOR:-local}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-openai-compat}"
+      LLM_DEFAULT_MODEL: "${LLM_DEFAULT_MODEL:-gpt-4o-mini}"
+      LLM_MAX_ITERATIONS: "${LLM_MAX_ITERATIONS:-15}"
+      LLM_OPENAI_BASE_URL: "${LLM_OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      LLM_OPENAI_API_KEY: "${LLM_OPENAI_API_KEY:-}"
+      ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_VERSION: "${ANTHROPIC_VERSION:-2023-06-01}"
+      PER_PR_COST_CAP_USD: "${PER_PR_COST_CAP_USD:-0.50}"
     group_add:
       - "${DOCKER_GID:-0}"
     restart: unless-stopped

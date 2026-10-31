@@ -50,10 +50,12 @@ class GitHubClient:
         self.github_webhook_secret = settings.github_webhook_secret
         self.github_app_slug = settings.github_app_slug
         self._rate_limit_bucket = _default_registry.get("github", capacity=100, refill_rate=1.0)
+        verify = settings.github_ca_bundle or True
         self._client = httpx.AsyncClient(
             base_url=GITHUB_API_BASE,
             timeout=REQUEST_TIMEOUT,
             follow_redirects=True,
+            verify=verify,
         )
         # In-process cache: installation_id -> (token, expires_at_epoch).
         self._token_cache: dict[int, tuple[str, float]] = {}
@@ -264,6 +266,42 @@ class GitHubClient:
     ) -> CheckRun:
         """Update an existing check run."""
         return await writes.update_check_run(self, owner, repo, check_run_id, conclusion, output)
+
+    async def get_check_run(
+        self,
+        owner: str,
+        repo: str,
+        check_run_id: int,
+    ) -> dict[str, Any]:
+        """Fetch one check run for reconciliation."""
+        headers = await self._api_headers(owner, repo)
+        response = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/check-runs/{check_run_id}",
+            headers=headers,
+        )
+        data = response.json()
+        if not isinstance(data, dict):
+            raise GitHubClientError("check run response is not an object")
+        return data
+
+    async def get_issue_comment(
+        self,
+        owner: str,
+        repo: str,
+        comment_id: int,
+    ) -> dict[str, Any]:
+        """Fetch one issue comment for reconciliation."""
+        headers = await self._api_headers(owner, repo)
+        response = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/issues/comments/{comment_id}",
+            headers=headers,
+        )
+        data = response.json()
+        if not isinstance(data, dict):
+            raise GitHubClientError("comment response is not an object")
+        return data
 
     def is_bot_author(self, pr: PullRequest) -> bool:
         """Return True when the PR appears to have been authored by this bot.

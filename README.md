@@ -31,20 +31,31 @@ The command prints one JSON object and stores the run in `.enten/reviews.json`:
 The local path posts nothing to GitHub. `--verify-command` takes an argv string
 and runs it without a shell.
 
+## CLI demo
+
+The recording runs a local review, the eval harness, the cost report, and the
+reconciliation command help. The source is
+[docs/demo.tape](docs/demo.tape); render it with VHS 0.11.0. VHS 0.12.0
+currently drops encoded output.
+
+![CLI demo: local review, eval, cost, and reconcile help](docs/demo.gif)
+
 ## Hosted review
 
 ![The verifier exit code decides the verdict](docs/figures/architecture.png)
 
 A signed webhook reaches the TypeScript edge, which validates the HMAC and
 enqueues a versioned job in Postgres. The Python worker claims the job with a
-lease generation, fetches `refs/pull/<n>/head` from the public repository, and
+lease generation, fetches the exact head SHA from the public repository, and
 starts the verifier container. The container runs with a read-only root
 filesystem and no network. All Linux capabilities are dropped. It runs as a
 non-root user and bounds CPU, memory, PID count, and time.
 
 A check and one pull request comment go out through a durable effect ledger.
 The worker records an attempt before each GitHub write and stops on an
-ambiguous result, so a timeout does not become a duplicate comment.
+ambiguous result, so a timeout does not become a duplicate comment. If the
+check exists but its response was lost, `enten reconcile` adopts the observed
+check and requeues the run; the missing comment is posted once.
 
 The worker uses the bounded local generator by default. Set
 `REVIEW_GENERATOR=llm` and configure one provider to let a model propose

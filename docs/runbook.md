@@ -82,12 +82,23 @@ its receipt is not durable. Automatic retry is disabled to prevent duplicates.
 
 3. Use the marker and reviewed SHA to inspect existing GitHub checks and
    comments.
-4. Reconcile with a forward repair that records the observed external ID or
-   creates a new explicitly versioned effect key.
-5. Restart the worker after reconciliation.
+4. If the check exists, adopt it with the operator command:
+
+   ```bash
+   docker compose run --rm --no-deps worker enten reconcile \
+     --run-id <run_id> --check-id <check_run_id>
+   ```
+
+   The command fetches the check, verifies its head SHA and App ID, records the
+   observed ID, and requeues the job. The worker posts the missing comment and
+   finishes the run. Pass `--comment-id` as well when both writes already exist;
+   that records both receipts without writing again.
+5. Start the worker after the command requeues the job.
 
 Never change `indeterminate` back to `prepared` without an observed external ID.
-The guard trigger accepts only the documented transitions.
+Migration `0004_effect_reconciliation.sql` allows only
+`indeterminate -> succeeded` with a non-null external ID. The guard trigger
+rejects every other undocumented transition.
 
 ## Migration drift or baseline failure
 

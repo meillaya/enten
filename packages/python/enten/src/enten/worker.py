@@ -12,6 +12,7 @@ import contextlib
 import os
 import sys
 import time
+import traceback
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -227,10 +228,12 @@ async def main(poll_interval: int = 5) -> None:
                             )
                 logger.info("job_completed", run_id=run_id, worker_id=worker_id)
             except Exception as exc:
-                logger.exception(
+                logger.error(
                     "job_failed",
                     run_id=run_id,
-                    error=str(exc),
+                    error=repr(exc),
+                    cause=repr(exc.__cause__),
+                    traceback=traceback.format_exc(),
                     worker_id=worker_id,
                 )
                 if job["attempts"] < 3:

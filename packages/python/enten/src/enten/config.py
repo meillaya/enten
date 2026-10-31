@@ -105,6 +105,8 @@ class Settings(BaseSettings):
     github_app_private_key_path: Path | None = None
     # Shared secret used to validate ``X-Hub-Signature-256`` on inbound webhooks.
     github_webhook_secret: str | None = Field(default=None, repr=False)
+    # Optional CA bundle for a GitHub API proxy or enterprise endpoint.
+    github_ca_bundle: str | None = None
     # ── LLM provider ─────────────────────────────────────────────────────
     llm_provider: LLMProvider = LLMProvider.OPENAI_COMPAT
     # Findings generator used by the production worker.

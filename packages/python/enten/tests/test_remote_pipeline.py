@@ -363,12 +363,12 @@ async def test_worker_remote_job_fails_closed_without_checkout_validation(tmp_pa
         )
 
 
-async def test_public_checkout_validator_requires_requested_pr_ref(
+async def test_public_checkout_validator_accepts_exact_head_after_pr_advances(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     from enten.review import remote
-    from enten.review.remote import GitPublicCheckoutValidator, UnvalidatedRemoteCheckoutError
+    from enten.review.remote import GitPublicCheckoutValidator
 
     request = ReviewRequest(
         repository_id="101",
@@ -380,21 +380,24 @@ async def test_public_checkout_validator_requires_requested_pr_ref(
         local_repository=False,
         verification_command=("true",),
     )
+    calls: list[tuple[str, ...]] = []
 
     async def fake_git(*arguments: str) -> str:
+        calls.append(arguments)
         if "rev-parse" in arguments:
             return request.head_sha
         if "get-url" in arguments:
             return "https://github.com/public/repo.git"
-        return "b84d88e7554fc1fa21bcbc4efae3c0a85e3a0000\trefs/pull/42/head"
+        raise AssertionError(f"unexpected git call: {arguments}")
 
     monkeypatch.setattr(remote, "_git", fake_git)
 
-    with pytest.raises(UnvalidatedRemoteCheckoutError, match="public pull request ref"):
-        await GitPublicCheckoutValidator().validate(request)
+    await GitPublicCheckoutValidator().validate(request)
+
+    assert all("ls-remote" not in call for call in calls)
 
 
-async def test_public_pr_checkout_fetches_exact_ref_and_cleans_up(
+async def test_public_pr_checkout_fetches_exact_sha_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import enten.review.public_checkout as checkout_module
@@ -424,8 +427,9 @@ async def test_public_pr_checkout_fetches_exact_ref_and_cleans_up(
 
     assert not created_checkout.exists()
     assert any(
-        "fetch" in call and "refs/pull/42/head" in call and "--depth=1" in call for call in calls
+        "fetch" in call and head_sha in call and "--depth=1" in call for call in calls
     )
+    assert all("refs/pull/42/head" not in call for call in calls)
 
 
 async def test_public_checkout_fetch_runs_under_posix_file_limit(
