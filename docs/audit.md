@@ -180,8 +180,8 @@ verdicts.
   private.
 - Migration `0004_effect_reconciliation.sql` applied before the final matrix.
 - Migration `0005_llm_calls_run_id.sql` adds the queue run ID to LLM calls so the
-  cost cap is cumulative. It is covered by the migration and client tests; it
-  has not been applied to the test VM yet.
+  cost cap is cumulative. It is covered by migration and client tests and was
+  applied to the test VM before the live probe run.
 
 ### Full matrix on the test image
 
@@ -224,6 +224,22 @@ validates the generate-run-classify path, the prompt wrapper, the local
 executor, and the confirmation policy. It does not establish the go/no-go gate
 on real repositories.
 
+### Live Python probe
+
+The worker ran `REVIEW_PROBES=on` against pull request
+[#3](https://github.com/meillaya/enten-test-repo/pull/3). The changed function
+subtracted a percentage instead of computing it. The verifier image was
+`python:3.12-slim` plus pytest 8.4.2, pinned by image ID.
+
+- Head `8bb1eb0`, job `pr_furkp6qmgoym`, verdict `pass`, verification exits
+  `[0, 0, 0]`.
+- The model returned a hypothesis with a pytest probe. The probe failed with
+  `assert 190.0 == 180.0`, so the finding was confirmed.
+- Check `124637874095` carried one warning annotation at `price.py:2`.
+- Comment `6548227574` included the probe source, command, and failure excerpt.
+- Effect ledger: `github-check` and `github-comment` both succeeded.
+- Cost: `$0.000088` for two model calls.
+
 ## Residual risk
 
 - The native Anthropic Messages client is unit tested but not live tested. The
@@ -247,7 +263,9 @@ on real repositories.
   TypeScript, Go, and other languages do not get evidence-backed findings.
 - The probe stage has not been exercised against a private repository on the
   live worker. Private checkout has unit coverage and an installation-token
-  path, but the full private end-to-end run is still pending.
+  path, but the full private end-to-end run is still pending. The test App is
+  installed on selected repositories only; its installation could not be
+  extended to the unused private test repository from the available token.
 - Ten moderate dependency advisories remain in the production and development
   trees. None is high or critical. `make audit` gates production high and
   critical findings, and `make audit-dev` reports the full tree.

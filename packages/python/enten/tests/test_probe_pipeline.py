@@ -164,3 +164,10 @@ async def test_shadow_mode_records_probes_without_publishing_findings(tmp_path: 
     assert result.run.findings is not None
     assert result.run.findings.findings == ()
     assert "shadow" in result.run.findings.summary
+
+
+def test_postgres_store_maps_every_review_stage() -> None:
+    from enten.review.postgres_store import _QUEUE_STAGE
+    from enten.review.run import ReviewStage
+
+    assert set(_QUEUE_STAGE) == set(ReviewStage.__args__)

@@ -16,6 +16,8 @@ from enten.review.run import ReviewKey, ReviewRun, ReviewStage
 _QUEUE_STAGE: dict[ReviewStage, QueueReviewStage] = {
     "created": QueueReviewStage.INDEXING,
     "proposed": QueueReviewStage.REVIEWING,
+    "hypothesized": QueueReviewStage.TESTING,
+    "probing": QueueReviewStage.TESTING,
     "findings": QueueReviewStage.TESTING,
     "verified": QueueReviewStage.VERIFYING,
     "persisted": QueueReviewStage.COMMENTING,
