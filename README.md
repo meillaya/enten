@@ -12,33 +12,41 @@ checks and comments. It cannot write repository contents.
 
 ## Quickstart
 
-Requirements: Python 3.11 or newer, [uv](https://docs.astral.sh/uv/), Node 22,
-and pnpm. Docker is only needed for the hosted verifier path.
+Requirements: Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
+Node, pnpm, and Docker are only needed for the full development and hosted
+paths.
 
 ```bash
 git clone https://github.com/Meillaya/enten.git
 cd enten
-make install
-uv run enten review --repo . --verify-command "python -m compileall -q ."
+uv sync --project packages/python/enten --all-groups --extra test
+uv run --project packages/python/enten enten
 ```
 
-The command prints one JSON object and stores the run in `.enten/reviews.json`:
+The review takes a few seconds and prints a short result:
 
-```json
-{"replayed": false, "review_id": "e94039eb27fd917e1f7a3236a04e2f59", "stage": "completed", "verdict": "pass"}
+```text
+PASS  python -m compileall -q .
+review <review_id>  .enten/reviews.json
 ```
 
-The local path posts nothing to GitHub. `--verify-command` takes an argv string
-and runs it without a shell.
+The default local command is a fast Python syntax check. Pass `--verify` to
+run your own command, or `--verify auto` to detect pytest, package, make, Go,
+or Cargo. Add `--json` for machine-readable output. The local path posts
+nothing to GitHub.
+
+The operator commands (`worker`, `cost`, `eval`, and `reconcile`) remain
+available but are hidden from the top-level help. Use the docs when you need
+the worker or a repair command.
 
 ## CLI demo
 
-The recording runs a local review, the eval harness, the cost report, and the
-reconciliation command help. The source is
+The recording runs a local review, the JSON form, and the top-level help. The
+source is
 [docs/demo.tape](docs/demo.tape); render it with VHS 0.11.0. VHS 0.12.0
 currently drops encoded output.
 
-![CLI demo: local review, eval, cost, and reconcile help](docs/demo.gif)
+![CLI demo: local review, JSON output, and help](docs/demo.gif)
 
 ## Hosted review
 

@@ -1,6 +1,8 @@
-"""enten CLI entry point.
+"""The enten command line.
 
-Exposes local review, cost reporting, evaluation, and the production worker.
+The default command reviews the current checkout. Everything else is an
+operator or development command and is deliberately hidden from the top-level
+help.
 """
 
 from __future__ import annotations
@@ -16,27 +18,58 @@ import anyio
 import typer
 
 from enten.local_identity import local_content_sha as _local_content_sha
+from enten.review.detect import VerificationDetectionError, detect_verify_command
 
 if TYPE_CHECKING:
     from enten.eval import EvalReport
 
 app = typer.Typer(
     name="enten",
-    help="enten - AI engineering agent.",
-    no_args_is_help=True,
+    help="Review a local checkout with one command.",
+    epilog=(
+        "Examples:\n"
+        "  enten\n"
+        "  enten --verify 'python -m pytest -q'\n"
+        "  enten --json"
+    ),
+    no_args_is_help=False,
     add_completion=False,
 )
 
 DEFAULT_REVIEW_STORE = Path(".enten/reviews.json")
 
 
-@app.command()
-def main() -> None:
-    """Print the canonical greeting."""
-    typer.echo("enten")
+@app.callback(invoke_without_command=True)
+def root(
+    ctx: typer.Context,
+    verify: Annotated[
+        str,
+        typer.Option(
+            "--verify",
+            help="Verification argv, or auto to detect a test command.",
+        ),
+    ] = "python -m compileall -q .",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+) -> None:
+    """Review the current checkout."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _review(
+        path=Path.cwd(),
+        verify=verify,
+        json_output=json_output,
+        pr_number=0,
+        sha=None,
+        store_path=DEFAULT_REVIEW_STORE,
+        diff_file=None,
+        probes="off",
+    )
 
 
-@app.command()
+@app.command(hidden=True)
 def worker(poll_interval: int = 5) -> None:
     """Run the enten worker process."""
     from enten.worker import main
@@ -44,7 +77,7 @@ def worker(poll_interval: int = 5) -> None:
     anyio.run(partial(main, poll_interval=poll_interval))
 
 
-@app.command(name="reconcile")
+@app.command(name="reconcile", hidden=True)
 def reconcile_command(
     run_id: Annotated[str, typer.Option("--run-id", help="Failed queue run to repair.")],
     check_id: Annotated[
@@ -74,42 +107,67 @@ def reconcile_command(
     typer.echo(json.dumps(result, sort_keys=True))
 
 
-@app.command(name="review")
+@app.command(name="review", hidden=True)
 def review_command(
-    repo: Annotated[
+    path: Annotated[
         Path,
-        typer.Option(
-            "--repo",
+        typer.Argument(
             exists=True,
             file_okay=False,
             resolve_path=True,
-            help="Local public repository checkout to review.",
+            help="Checkout to review. Defaults to the current directory.",
         ),
-    ],
-    pr_number: Annotated[int, typer.Option("--pr", min=0, help="Pull request number.")] = 0,
-    sha: Annotated[str | None, typer.Option("--sha", help="Reviewed head commit SHA.")] = None,
-    verify_command: Annotated[
+    ] = Path("."),
+    verify: Annotated[
         str,
-        typer.Option(
-            "--verify-command",
-            help="Argv-only verification command (no shell expansion).",
-        ),
+        typer.Option("--verify", help="Verification argv, or auto to detect."),
     ] = "python -m compileall -q .",
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+    pr_number: Annotated[
+        int,
+        typer.Option("--pr", min=0, hidden=True),
+    ] = 0,
+    sha: Annotated[str | None, typer.Option("--sha", hidden=True)] = None,
     store_path: Annotated[
         Path,
-        typer.Option("--store-path", help="Canonical local ReviewRun store."),
+        typer.Option("--store-path", hidden=True),
     ] = DEFAULT_REVIEW_STORE,
     diff_file: Annotated[
         Path | None,
-        typer.Option("--diff-file", exists=True, dir_okay=False, help="Unified diff."),
+        typer.Option("--diff-file", exists=True, dir_okay=False, hidden=True),
     ] = None,
     probes: Annotated[
         str,
-        typer.Option("--probes", help="Python probes: off, shadow, or on."),
+        typer.Option("--probes", hidden=True),
     ] = "off",
 ) -> None:
-    """Review a local checkout through the same stage machine as the worker."""
-    from enten.config import Settings
+    """Review a checkout. The root command is the simple form."""
+    _review(
+        path=path,
+        verify=verify,
+        json_output=json_output,
+        pr_number=pr_number,
+        sha=sha,
+        store_path=store_path,
+        diff_file=diff_file,
+        probes=probes,
+    )
+
+
+def _review(
+    *,
+    path: Path,
+    verify: str,
+    json_output: bool,
+    pr_number: int,
+    sha: str | None,
+    store_path: Path,
+    diff_file: Path | None,
+    probes: str,
+) -> None:
     from enten.pipeline import JsonReviewStore, PipelineDependencies, execute_review
     from enten.reporting.effects import NoopEffects
     from enten.review.local import LocalFindingsGenerator, LocalVerifier
@@ -118,21 +176,15 @@ def review_command(
 
     if probes not in {"off", "shadow", "on"}:
         raise typer.BadParameter("probes must be off, shadow, or on", param_hint="--probes")
-
-    command = tuple(shlex.split(verify_command))
-    if not command:
-        raise typer.BadParameter(
-            "verification command cannot be empty",
-            param_hint="--verify-command",
-        )
-    resolved_sha = sha or _local_content_sha(repo, store_path)
+    command = _resolve_verify(path, verify)
+    resolved_sha = sha or _local_content_sha(path, store_path)
     diff = diff_file.read_text(encoding="utf-8") if diff_file is not None else ""
     request = ReviewRequest(
-        repository_id=str(repo),
+        repository_id=str(path),
         repository_full_name=None,
         pr_number=pr_number,
         head_sha=resolved_sha,
-        repository_path=repo,
+        repository_path=path,
         public_repository=True,
         local_repository=True,
         verification_command=command,
@@ -145,12 +197,18 @@ def review_command(
         effects=NoopEffects(),
     )
     if probes != "off":
-        from enten._worker_runtime import build_hypothesis_generator
+        from enten._worker_runtime import WorkerConfigurationError, build_hypothesis_generator
+        from enten.config import Settings
 
         settings = Settings()
+        try:
+            generator = build_hypothesis_generator(settings)
+        except WorkerConfigurationError as exc:
+            typer.echo(f"probes: {exc}", err=True)
+            raise typer.Exit(2) from exc
         dependencies = replace(
             dependencies,
-            hypothesis_generator=build_hypothesis_generator(settings),
+            hypothesis_generator=generator,
             probe_runner=LocalProbeRunner(
                 parse_probe_command(settings.probe_command),
                 settings.probe_timeout_seconds,
@@ -159,22 +217,46 @@ def review_command(
         )
     result = anyio.run(execute_review, request, dependencies)
     verdict = result.run.verification.verdict if result.run.verification else "error"
-    typer.echo(
-        json.dumps(
-            {
-                "review_id": result.run.review_id,
-                "stage": result.run.stage,
-                "verdict": verdict,
-                "replayed": result.replayed,
-            },
-            sort_keys=True,
+    findings = result.run.findings.findings if result.run.findings is not None else ()
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "review_id": result.run.review_id,
+                    "stage": result.run.stage,
+                    "verdict": verdict,
+                    "replayed": result.replayed,
+                    "findings": len(findings),
+                },
+                sort_keys=True,
+            )
         )
-    )
+    else:
+        label = {"pass": "PASS", "flaky": "FLAKY", "fail": "FAIL", "error": "ERROR"}[verdict]
+        cached = "  cached" if result.replayed else ""
+        typer.echo(f"{label}  {shlex.join(command)}{cached}")
+        confirmed = [finding for finding in findings if finding.evidence is not None]
+        if confirmed:
+            typer.echo(f"{len(confirmed)} confirmed finding(s)")
+        typer.echo(f"review {result.run.review_id}  {store_path}")
     if verdict in {"fail", "error"}:
         raise typer.Exit(1)
 
 
-@app.command(name="cost")
+def _resolve_verify(path: Path, verify: str) -> tuple[str, ...]:
+    raw = verify.strip()
+    if raw.lower() == "auto":
+        try:
+            return detect_verify_command(path)
+        except VerificationDetectionError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--verify") from exc
+    command = tuple(shlex.split(raw))
+    if not command:
+        raise typer.BadParameter("verification command cannot be empty", param_hint="--verify")
+    return command
+
+
+@app.command(name="cost", hidden=True)
 def cost_command(
     pr_number: Annotated[
         int | None,
@@ -214,7 +296,7 @@ def cost_command(
     )
 
 
-@app.command(name="eval")
+@app.command(name="eval", hidden=True)
 def eval_command(
     corpus: str = typer.Option(..., "--corpus", help="Directory containing eval fixtures."),
     report: str = typer.Option(..., "--report", help="Path to write the JSON eval report."),

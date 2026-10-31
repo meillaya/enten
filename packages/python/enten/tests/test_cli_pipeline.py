@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.core import TyperGroup, TyperOption
+from typer.core import TyperOption
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -12,54 +12,49 @@ from enten.cli import app
 
 
 def test_review_command_runs_local_repository_and_persists_artifact(tmp_path: Path) -> None:
-    # Given
     repository = tmp_path / "sample"
     repository.mkdir()
     (repository / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
     store_path = tmp_path / "reviews.json"
 
-    # When
     result = CliRunner().invoke(
         app,
         [
             "review",
-            "--repo",
             str(repository),
             "--sha",
             "abc123",
-            "--verify-command",
+            "--verify",
             "python -m compileall -q .",
             "--store-path",
             str(store_path),
+            "--json",
         ],
     )
 
-    # Then
     assert result.exit_code == 0, result.output
     output = json.loads(result.output)
     assert output["stage"] == "completed"
     assert output["verdict"] == "pass"
     assert output["replayed"] is False
+    assert output["findings"] == 0
     assert store_path.exists()
 
 
-def test_readme_default_review_replays_without_explicit_sha(
+def test_root_command_reviews_the_current_directory_and_replays(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given
     repository = tmp_path / "sample"
     repository.mkdir()
     (repository / "app.py").write_text("value = 1\n", encoding="utf-8")
     monkeypatch.chdir(repository)
     runner = CliRunner()
-    arguments = ["review", "--repo", "."]
+    arguments = ["--verify", "python -m compileall -q .", "--json"]
 
-    # When
     first = runner.invoke(app, arguments)
     second = runner.invoke(app, arguments)
 
-    # Then
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
     first_output = json.loads(first.output)
@@ -71,8 +66,24 @@ def test_readme_default_review_replays_without_explicit_sha(
     assert len(stored) == 1
 
 
+def test_root_command_has_a_human_readable_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "sample"
+    repository.mkdir()
+    (repository / "app.py").write_text("value = 1\n", encoding="utf-8")
+    monkeypatch.chdir(repository)
+
+    result = CliRunner().invoke(app, ["--verify", "python -m compileall -q ."])
+
+    assert result.exit_code == 0, result.output
+    assert "PASS" in result.output
+    assert "review " in result.output
+    assert ".enten/reviews.json" in result.output
+
+
 def test_review_replays_when_custom_store_is_inside_repository(tmp_path: Path) -> None:
-    # Given
     repository = tmp_path / "sample"
     repository.mkdir()
     (repository / "app.py").write_text("value = 1\n", encoding="utf-8")
@@ -80,19 +91,17 @@ def test_review_replays_when_custom_store_is_inside_repository(tmp_path: Path) -
     runner = CliRunner()
     arguments = [
         "review",
-        "--repo",
         str(repository),
-        "--verify-command",
+        "--verify",
         "python -c 'pass'",
         "--store-path",
         str(store_path),
+        "--json",
     ]
 
-    # When
     first = runner.invoke(app, arguments)
     second = runner.invoke(app, arguments)
 
-    # Then
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
     first_output = json.loads(first.output)
@@ -103,7 +112,6 @@ def test_review_replays_when_custom_store_is_inside_repository(tmp_path: Path) -
 
 
 def test_cost_command_reports_persisted_local_review(tmp_path: Path) -> None:
-    # Given
     repository = tmp_path / "sample"
     repository.mkdir()
     (repository / "app.py").write_text("x = 1\n", encoding="utf-8")
@@ -113,30 +121,32 @@ def test_cost_command_reports_persisted_local_review(tmp_path: Path) -> None:
         app,
         [
             "review",
-            "--repo",
             str(repository),
             "--pr",
             "8",
             "--sha",
             "c0ffee",
-            "--verify-command",
+            "--verify",
             "python -m compileall -q .",
             "--store-path",
             str(store_path),
+            "--json",
         ],
     )
     assert reviewed.exit_code == 0, reviewed.output
 
-    # When
     result = runner.invoke(
         app,
         ["cost", "--pr", "8", "--store-path", str(store_path), "--json"],
     )
 
-    # Then
     assert result.exit_code == 0, result.output
-    output = json.loads(result.output)
-    assert output == {"cost_usd": "0", "reviews": 1, "tokens_in": 0, "tokens_out": 0}
+    assert json.loads(result.output) == {
+        "cost_usd": "0",
+        "reviews": 1,
+        "tokens_in": 0,
+        "tokens_out": 0,
+    }
 
 
 def test_review_command_arbitrates_actual_nonzero_process_exit(tmp_path: Path) -> None:
@@ -149,14 +159,14 @@ def test_review_command_arbitrates_actual_nonzero_process_exit(tmp_path: Path) -
         app,
         [
             "review",
-            "--repo",
             str(repository),
             "--sha",
             "deadbeef",
-            "--verify-command",
+            "--verify",
             "python -c 'import sys; sys.exit(7)'",
             "--store-path",
             str(store_path),
+            "--json",
         ],
     )
 
@@ -166,19 +176,19 @@ def test_review_command_arbitrates_actual_nonzero_process_exit(tmp_path: Path) -
     assert stored[0]["verification"]["exit_codes"] == [7]
 
 
-def test_review_and_cost_help_are_available() -> None:
-    # Given
+def test_top_level_help_and_advanced_command_help_are_available() -> None:
     runner = CliRunner()
 
-    # When
+    root = runner.invoke(app, ["--help"])
     review = runner.invoke(app, ["review", "--help"])
     cost = runner.invoke(app, ["cost", "--help"])
     command = get_command(app)
 
-    # Then
+    assert root.exit_code == 0, root.output
     assert review.exit_code == 0, review.output
     assert cost.exit_code == 0, cost.output
-    assert isinstance(command, TyperGroup)
+    assert "--verify" in root.output
+    assert "--json" in root.output
     review_options = {
         option
         for parameter in command.commands["review"].params
@@ -191,5 +201,5 @@ def test_review_and_cost_help_are_available() -> None:
         if isinstance(parameter, TyperOption)
         for option in parameter.opts
     }
-    assert {"--repo", "--verify-command"} <= review_options
+    assert {"--verify", "--store-path", "--probes", "--json"} <= review_options
     assert {"--pr"} <= cost_options

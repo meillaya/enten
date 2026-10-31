@@ -13,20 +13,18 @@ Set CursorBlink false
 Hide
 Type "clear"
 Enter
+Type "rm -rf .enten"
+Enter
 Show
 
-Type "uv run --project packages/python/enten enten review --repo . --verify-command 'python -m compileall -q .' --store-path /tmp/enten-demo-reviews.json"
+Type "uv run --project packages/python/enten enten"
 Enter
 Sleep 5s
 
-Type "make eval"
-Enter
-Sleep 4s
-
-Type "uv run --project packages/python/enten enten cost --store-path /tmp/enten-demo-reviews.json"
+Type "uv run --project packages/python/enten enten --json"
 Enter
 Sleep 3s
 
-Type "uv run --project packages/python/enten enten reconcile --help"
+Type "uv run --project packages/python/enten enten --help"
 Enter
 Sleep 3s
