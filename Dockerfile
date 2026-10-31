@@ -29,6 +29,10 @@ LABEL org.opencontainers.image.title="enten"
 LABEL org.opencontainers.image.description="Deterministic GitHub pull-request review agent"
 LABEL org.opencontainers.image.source="https://github.com/Meillaya/enten"
 
+RUN apt-get -o Acquire::ForceIPv4=true update \
+    && apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 1000 enten \
     && useradd --uid 1000 --gid enten --shell /usr/sbin/nologin --create-home enten
 

@@ -101,6 +101,17 @@ percent gate. The suite now covers 91.37 percent of branches, so the upgrade
 ships with the new tests. `make audit-dev` reports the development tree without
 gating a release.
 
+### 8. The runtime image could not check out a repository
+
+The first live worker run failed at checkout. The runtime image had `prlimit`
+but no `git`, because the slim Python base does not include it and the
+Dockerfile never installed it. The worker could not run `git init` or fetch the
+pull request ref.
+
+The runtime stage now installs `ca-certificates` and `git` with apt. A Dockerfile
+test checks that `git` and `prlimit` resolve before the image ships. The next
+live run completed the full path.
+
 ## Reviewed and held
 
 - Webhook ingress reads a size-capped raw body, checks the content type,
@@ -125,7 +136,9 @@ gating a release.
 - PR comment rendering escapes HTML, backticks, and `@` mentions, and truncates
   the body at 65,535 characters.
 
-## Deployment test
+## Deployment tests
+
+### Railway web tier
 
 The scratch Railway project ran the web tier and Postgres. The worker was not
 deployed because Railway has no Docker socket.
@@ -144,6 +157,24 @@ deployed because Railway has no Docker socket.
 
 The final deploy after the dependency upgrades repeated the health, readiness,
 metrics, and webhook checks.
+
+### Full VM path
+
+The Compose stack ran on a machine0 VM with a real GitHub App installed on
+`meillaya/enten-test-repo`. Pull request
+[#1](https://github.com/meillaya/enten-test-repo/pull/1) exercised both
+verdicts.
+
+- Passing head `bbac889`: job `done`, Check Run `success`, comment `pass`,
+  verification exits `[0, 0, 0]`.
+- Failing head `43b5268`: job `done`, Check Run `failure`, comment `fail`,
+  verification exits `[1, 1, 1]`.
+- `external_effects`: the check and comment rows reached `succeeded` for both
+  runs.
+- Trace `42e7eab4f29d21bcecaab8b9b5869957`: 64 spans, including
+  `POST /webhook`, `jobs enqueue`, `pr_review.consume`, and the pipeline stages.
+- The public HTTPS origin served `/health` and `/ready`. `/metrics` stayed
+  private.
 
 ## Residual risk
 

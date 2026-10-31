@@ -102,6 +102,31 @@ def test_runtime_resolves_production_dependencies(
     )
 
 
+def test_runtime_has_checkout_tools(
+    built_image: dict[str, Any],
+    image_tag: str,
+) -> None:
+    """The worker image can run git and the bounded fetch helper."""
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--entrypoint",
+            "sh",
+            image_tag,
+            "-c",
+            "git --version >/dev/null && prlimit --version >/dev/null 2>&1",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"checkout tools are missing:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+
+
 def test_dockerfile_has_healthcheck(built_image: dict[str, Any]) -> None:
     healthcheck = built_image["Config"].get("Healthcheck")
     assert healthcheck is not None, "HEALTHCHECK is not defined"

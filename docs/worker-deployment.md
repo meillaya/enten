@@ -181,6 +181,27 @@ If the job stays queued, check the worker log for a Docker or PEM error. If the
 job reaches `done` and GitHub has no check, query `external_effects` for an
 `indeterminate` row and follow the runbook.
 
+## Troubleshooting container egress
+
+The worker and the verifier need outbound access to GitHub. Test the container
+network when the host can reach GitHub but the worker cannot:
+
+```bash
+docker run --rm alpine wget -qO- --timeout=5 https://api.github.com
+```
+
+If that times out, Docker is not forwarding return traffic. On a host where
+`dockerd` was started manually, or where the host firewall sets the `FORWARD`
+policy to `DROP`, add the established-traffic rule:
+
+```bash
+sudo iptables -I DOCKER-FORWARD 1 \
+  -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+```
+
+Apply the rule in the host firewall service so it survives a reboot. A normal
+Docker Engine install adds this rule itself.
+
 ## 9. Clean up the test
 
 ```bash
