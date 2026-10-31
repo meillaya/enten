@@ -5,6 +5,7 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
+from enten.review.diff import MAX_DIFF_BYTES
 from enten.review.run import ReviewRequest
 
 
@@ -28,6 +29,7 @@ class EnvelopeRepository(BaseModel):
         pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
         max_length=255,
     )
+    private: bool = False
 
 
 class EnvelopePullRequest(BaseModel):
@@ -85,6 +87,7 @@ class ReviewJobEnvelope(BaseModel):
         verification_command: tuple[str, ...] | None = None,
         expected_review_contract: str | None = None,
         correlation_run_id: str | None = None,
+        diff: str = "",
     ) -> ReviewRequest:
         command = verification_command or ("python", "-m", "compileall", "-q", ".")
         if (
@@ -98,11 +101,12 @@ class ReviewJobEnvelope(BaseModel):
             pr_number=self.pull_request.number,
             head_sha=self.pull_request.head_sha,
             repository_path=repository_path,
-            public_repository=True,
+            public_repository=not self.repository.private,
             local_repository=False,
             verification_command=command,
             review_contract=self.review_contract,
             correlation_run_id=correlation_run_id,
+            diff=diff[:MAX_DIFF_BYTES],
         )
 
 

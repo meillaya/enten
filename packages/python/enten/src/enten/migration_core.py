@@ -15,6 +15,9 @@ KNOWN_MIGRATION_HASHES: Final[dict[str, str]] = {
     "0004_effect_reconciliation.sql": (
         "5108e4270c53e23ae75de01752725bf3bb68b1d228f99abd9b87324da745fef1"
     ),
+    "0005_llm_calls_run_id.sql": (
+        "278cba850ebb61c1f80671b1518c3d8c9b2603bfc6fa9187fe1c59b2e18df2d2"
+    ),
 }
 MIGRATION_NAME: Final = re.compile(r"^(?P<version>[0-9]{4})_[a-z0-9_]+\.sql$")
 LOCK_KEY: Final = 7_303_152_109_791_101_449

@@ -62,6 +62,14 @@ class ReviewGenerator(str, Enum):
     LLM = "llm"
 
 
+class ProbeMode(str, Enum):
+    """Whether Python probes are disabled, measured, or published."""
+
+    OFF = "off"
+    SHADOW = "shadow"
+    ON = "on"
+
+
 class SandboxProvider(str, Enum):
     """Where agent-generated code actually runs.
 
@@ -111,6 +119,11 @@ class Settings(BaseSettings):
     llm_provider: LLMProvider = LLMProvider.OPENAI_COMPAT
     # Findings generator used by the production worker.
     review_generator: ReviewGenerator = ReviewGenerator.LOCAL
+    # Python probe mode: off, shadow (measure only), or on (publish confirmed).
+    review_probes: ProbeMode = ProbeMode.OFF
+    probe_command: str = "python -m pytest -q"
+    probe_max: int = Field(default=3, ge=0, le=3)
+    probe_timeout_seconds: int = Field(default=90, ge=1, le=600)
     # Default chat model name sent on every request.
     llm_default_model: str = "gpt-4o-mini"
     llm_max_iterations: int = 15
@@ -158,6 +171,7 @@ class Settings(BaseSettings):
 
 __all__ = [
     "LLMProvider",
+    "ProbeMode",
     "ReviewGenerator",
     "SandboxProvider",
     "Settings",

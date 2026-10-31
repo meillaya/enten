@@ -31,6 +31,7 @@ async def public_pull_request_checkout(
     repository_full_name: str,
     pr_number: int,
     head_sha: str,
+    token: str | None = None,
 ) -> AsyncIterator[Path]:
     checkout = Path(tempfile.mkdtemp(prefix="enten-public-pr-"))
     public_url = f"https://github.com/{repository_full_name}.git"
@@ -38,9 +39,26 @@ async def public_pull_request_checkout(
     # so fetching it would make a legitimate retry fail after a new commit.
     _ = pr_number
     try:
+        environment: dict[str, str] = {}
+        if token:
+            askpass = checkout / "askpass.sh"
+            askpass.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  *Username*) printf '%s\\n' x-access-token ;;\n"
+                "  *Password*) printf '%s\\n' \"$GITHUB_TOKEN\" ;;\n"
+                "  *) printf '\\n' ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            askpass.chmod(0o700)
+            environment = {
+                "GIT_ASKPASS": str(askpass),
+                "GITHUB_TOKEN": token,
+            }
         await _git("init", "--quiet", str(checkout))
         await _git("-C", str(checkout), "remote", "add", "origin", public_url)
-        await _limited_git(
+        fetch_args = (
             "-c",
             "credential.helper=",
             "-c",
@@ -54,6 +72,10 @@ async def public_pull_request_checkout(
             public_url,
             head_sha,
         )
+        if environment:
+            await _limited_git(*fetch_args, extra_env=environment)
+        else:
+            await _limited_git(*fetch_args)
         pack_bytes = await run_sync(_pack_size_bytes, checkout)
         if pack_bytes > FETCH_PACK_MAX_BYTES:
             raise UnvalidatedRemoteCheckoutError(
@@ -84,22 +106,30 @@ async def _git(*arguments: str) -> str:
     return await _run_command(("git", *arguments))
 
 
-async def _limited_git(*arguments: str) -> str:
+async def _limited_git(
+    *arguments: str,
+    extra_env: dict[str, str] | None = None,
+) -> str:
     prlimit = shutil.which("prlimit")
     if prlimit is None:
         raise UnvalidatedRemoteCheckoutError("prlimit is required for bounded public fetches")
-    return await _run_command(
-        (
-            prlimit,
-            f"--fsize={FETCH_PACK_MAX_BYTES}",
-            "--",
-            "git",
-            *arguments,
-        )
+    command = (
+        prlimit,
+        f"--fsize={FETCH_PACK_MAX_BYTES}",
+        "--",
+        "git",
+        *arguments,
     )
+    if extra_env:
+        return await _run_command(command, extra_env=extra_env)
+    return await _run_command(command)
 
 
-async def _run_command(command: tuple[str, ...]) -> str:
+async def _run_command(
+    command: tuple[str, ...],
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> str:
     environment = {
         "GIT_ASKPASS": "/bin/false",
         "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -107,11 +137,13 @@ async def _run_command(command: tuple[str, ...]) -> str:
         "GIT_TERMINAL_PROMPT": "0",
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
     }
+    if extra_env:
+        environment.update(extra_env)
     with anyio.fail_after(30):
         completed = await anyio.run_process(command, env=environment, check=False)
     if completed.returncode != 0:
         stderr = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise UnvalidatedRemoteCheckoutError(stderr or "public checkout validation failed")
+        raise UnvalidatedRemoteCheckoutError(stderr or "checkout validation failed")
     return completed.stdout.decode("utf-8", errors="strict").strip()
 
 

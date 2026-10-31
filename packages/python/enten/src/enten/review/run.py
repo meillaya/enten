@@ -10,11 +10,14 @@ from typing import ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from enten.review.contract import review_contract_digest
+from enten.review.diff import MAX_DIFF_BYTES, DiffIndex
 
 ReviewKey = tuple[str, int, str, str]
 ReviewStage = Literal[
     "created",
     "proposed",
+    "hypothesized",
+    "probing",
     "findings",
     "verified",
     "persisted",
@@ -39,12 +42,7 @@ class ReviewRequest(BaseModel):
     verification_command: tuple[str, ...] = Field(min_length=1)
     review_contract: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     correlation_run_id: str | None = Field(default=None, max_length=255)
-
-    @model_validator(mode="after")
-    def require_public_remote_repository(self) -> ReviewRequest:
-        if not self.local_repository and not self.public_repository:
-            raise ValueError("only public remote repositories can be reviewed")
-        return self
+    diff: str = Field(default="", max_length=MAX_DIFF_BYTES)
 
     @property
     def key(self) -> ReviewKey:
@@ -65,6 +63,21 @@ class Proposal(BaseModel):
     verification_command: tuple[str, ...]
     pr_number: int = 0
     correlation_run_id: str | None = None
+    diff: str = Field(default="", max_length=MAX_DIFF_BYTES)
+    changed: DiffIndex = Field(default_factory=DiffIndex)
+
+
+class FindingEvidence(BaseModel):
+    """Executable evidence attached to a confirmed finding."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    probe_command: tuple[str, ...]
+    test_source: str = Field(min_length=1, max_length=20_000)
+    exit_code: int
+    output_excerpt: str = Field(default="", max_length=4_000)
+    test_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sandbox: str = Field(default="docker", max_length=20)
 
 
 class Finding(BaseModel):
@@ -77,6 +90,60 @@ class Finding(BaseModel):
     message: str = Field(min_length=1, max_length=1_000)
     file: str = Field(min_length=1, max_length=500)
     line: int = Field(gt=0)
+    start_line: int | None = Field(default=None, gt=0)
+    side: Literal["RIGHT"] = "RIGHT"
+    evidence: FindingEvidence | None = None
+
+
+class Hypothesis(BaseModel):
+    """A model claim plus a pytest probe that can confirm or reject it."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: str = Field(min_length=1, max_length=64)
+    category: str = Field(min_length=1, max_length=100)
+    severity: Literal["low", "medium", "high", "critical"]
+    message: str = Field(min_length=1, max_length=1_000)
+    file: str = Field(min_length=1, max_length=500)
+    line: int = Field(gt=0)
+    rationale: str = Field(default="", max_length=2_000)
+    test_source: str = Field(min_length=1, max_length=20_000)
+    test_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class HypothesisSet(BaseModel):
+    """Bounded model output before any probe is executed."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    hypotheses: tuple[Hypothesis, ...] = Field(max_length=3)
+    tokens_in: int = Field(default=0, ge=0)
+    tokens_out: int = Field(default=0, ge=0)
+    cost_usd: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+ProbeStatus = Literal["confirmed", "rejected", "inconclusive"]
+
+
+class ProbeResult(BaseModel):
+    """Result of running one generated probe in a sandbox."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    hypothesis_id: str = Field(min_length=1, max_length=64)
+    status: ProbeStatus
+    exit_code: int | None = None
+    duration_ms: int = Field(default=0, ge=0)
+    output_excerpt: str = Field(default="", max_length=4_000)
+    test_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ProbeEvidence(BaseModel):
+    """All probe results for a review run."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    results: tuple[ProbeResult, ...] = Field(default=(), max_length=3)
 
 
 class GeneratedFindings(BaseModel):
@@ -133,6 +200,8 @@ class ReviewRun(BaseModel):
     request: ReviewRequest
     stage: ReviewStage
     proposal: Proposal | None = None
+    hypotheses: HypothesisSet | None = None
+    probes: ProbeEvidence | None = None
     findings: GeneratedFindings | None = None
     verification: VerificationEvidence | None = None
     report_receipt: EffectReceipt | None = None
@@ -145,6 +214,19 @@ class PipelineResult(BaseModel):
 
     run: ReviewRun
     replayed: bool
+
+
+class ReportAnnotation(BaseModel):
+    """A file/line annotation to attach to the check run."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    path: str = Field(min_length=1, max_length=500)
+    start_line: int = Field(gt=0)
+    end_line: int = Field(gt=0)
+    annotation_level: Literal["notice", "warning", "failure"]
+    title: str = Field(min_length=1, max_length=80)
+    message: str = Field(min_length=1, max_length=1_000)
 
 
 class ReportPayload(BaseModel):
@@ -160,14 +242,22 @@ class ReportPayload(BaseModel):
     title: str = Field(max_length=80)
     summary: str = Field(max_length=65_535)
     comment: str = Field(max_length=65_535)
+    annotations: tuple[ReportAnnotation, ...] = Field(default=(), max_length=50)
 
 
 __all__ = [
     "EffectReceipt",
     "Finding",
+    "FindingEvidence",
+    "Hypothesis",
+    "HypothesisSet",
+    "ProbeEvidence",
+    "ProbeResult",
+    "ProbeStatus",
     "GeneratedFindings",
     "PipelineResult",
     "Proposal",
+    "ReportAnnotation",
     "ReportPayload",
     "ReviewKey",
     "ReviewRequest",

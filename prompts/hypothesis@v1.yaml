@@ -1,0 +1,24 @@
+version: 1
+slug: hypothesis
+system: >
+  You are reviewing a Python change. Find only defects that a small pytest test
+  can demonstrate. Return at most three hypotheses. Every hypothesis must cite
+  an added line and include a complete test file. The test must fail on the
+  current code when the defect is real. Do not use network, subprocess, sleeps,
+  or writes outside temporary directories. Prefer one focused assertion over a
+  broad suite. If you cannot express the issue as a failing test, return no
+  hypotheses.
+user_template: |
+  {diff}
+
+  Changed Python files:
+  {changed_files}
+
+  Bounded repository context:
+  {repository_context}
+variables:
+  - diff
+  - changed_files
+  - repository_context
+output_schema:
+  type: object

@@ -17,6 +17,8 @@ MAX_TRUSTED_SOURCE_MANIFEST_BYTES: Final = 4 * 1024
 
 _EXCLUDED_DIRECTORIES = frozenset(
     {
+        ".enten",
+        ".enten-probes",
         ".git",
         ".mypy_cache",
         ".pytest_cache",

@@ -78,12 +78,24 @@ class Comment(_GitHubModel):
     user: User | None = None
 
 
+class Annotation(_GitHubModel):
+    """One file/line annotation attached to a check run."""
+
+    path: str
+    start_line: int
+    end_line: int
+    annotation_level: str
+    message: str
+    title: str | None = None
+
+
 class CheckRunOutput(_GitHubModel):
     """Check-run output payload."""
 
     title: str
     summary: str
     text: str | None = None
+    annotations: list[Annotation] | None = None
 
 
 class CheckRun(_GitHubModel):

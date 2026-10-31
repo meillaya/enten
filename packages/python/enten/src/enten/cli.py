@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -98,12 +99,25 @@ def review_command(
         Path,
         typer.Option("--store-path", help="Canonical local ReviewRun store."),
     ] = DEFAULT_REVIEW_STORE,
+    diff_file: Annotated[
+        Path | None,
+        typer.Option("--diff-file", exists=True, dir_okay=False, help="Unified diff."),
+    ] = None,
+    probes: Annotated[
+        str,
+        typer.Option("--probes", help="Python probes: off, shadow, or on."),
+    ] = "off",
 ) -> None:
     """Review a local checkout through the same stage machine as the worker."""
+    from enten.config import Settings
     from enten.pipeline import JsonReviewStore, PipelineDependencies, execute_review
     from enten.reporting.effects import NoopEffects
     from enten.review.local import LocalFindingsGenerator, LocalVerifier
+    from enten.review.python_probes import LocalProbeRunner, parse_probe_command
     from enten.review.run import ReviewRequest
+
+    if probes not in {"off", "shadow", "on"}:
+        raise typer.BadParameter("probes must be off, shadow, or on", param_hint="--probes")
 
     command = tuple(shlex.split(verify_command))
     if not command:
@@ -112,6 +126,7 @@ def review_command(
             param_hint="--verify-command",
         )
     resolved_sha = sha or _local_content_sha(repo, store_path)
+    diff = diff_file.read_text(encoding="utf-8") if diff_file is not None else ""
     request = ReviewRequest(
         repository_id=str(repo),
         repository_full_name=None,
@@ -121,17 +136,28 @@ def review_command(
         public_repository=True,
         local_repository=True,
         verification_command=command,
+        diff=diff,
     )
-    result = anyio.run(
-        execute_review,
-        request,
-        PipelineDependencies(
-            store=JsonReviewStore(store_path),
-            generator=LocalFindingsGenerator(),
-            verifier=LocalVerifier(),
-            effects=NoopEffects(),
-        ),
+    dependencies = PipelineDependencies(
+        store=JsonReviewStore(store_path),
+        generator=LocalFindingsGenerator(),
+        verifier=LocalVerifier(),
+        effects=NoopEffects(),
     )
+    if probes != "off":
+        from enten._worker_runtime import build_hypothesis_generator
+
+        settings = Settings()
+        dependencies = replace(
+            dependencies,
+            hypothesis_generator=build_hypothesis_generator(settings),
+            probe_runner=LocalProbeRunner(
+                parse_probe_command(settings.probe_command),
+                settings.probe_timeout_seconds,
+            ),
+            probe_publish=probes == "on",
+        )
+    result = anyio.run(execute_review, request, dependencies)
     verdict = result.run.verification.verdict if result.run.verification else "error"
     typer.echo(
         json.dumps(

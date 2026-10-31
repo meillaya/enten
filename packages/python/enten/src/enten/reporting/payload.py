@@ -3,8 +3,8 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Final
 
-from enten.reporting.comment import sanitize_markdown_inline
-from enten.review.run import ReportPayload, ReviewRun
+from enten.reporting.comment import sanitize_markdown_block, sanitize_markdown_inline
+from enten.review.run import Finding, ReportAnnotation, ReportPayload, ReviewRun
 
 _COMMENT_MARKER_DOMAIN: Final = b"enten-pr-review-comment-v1\x00"
 
@@ -25,6 +25,7 @@ def build_report(run: ReviewRun) -> ReportPayload:
         file = sanitize_markdown_inline(finding.file)
         message = sanitize_markdown_inline(finding.message)
         evidence_lines.append(f"- `{file}:{finding.line}` [{finding.severity}] {message}")
+    annotations = _annotations(anchored, run)
     verdict = run.verification.verdict
     marker = comment_marker(run.request.head_sha)
     infrastructure_detail = run.verification.infrastructure_detail
@@ -43,6 +44,7 @@ def build_report(run: ReviewRun) -> ReportPayload:
             "",
             "### Findings",
             *(evidence_lines or ["No verifiable findings."]),
+            *_evidence_blocks(anchored),
         ]
     )
     comment = body[:65_535]
@@ -57,7 +59,66 @@ def build_report(run: ReviewRun) -> ReportPayload:
         title=f"enten review: {verdict}"[:80],
         summary=comment,
         comment=comment,
+        annotations=annotations,
     )
+
+
+def _annotations(findings: list[Finding], run: ReviewRun) -> tuple[ReportAnnotation, ...]:
+    annotations: list[ReportAnnotation] = []
+    for finding in findings:
+        if finding.evidence is None:
+            continue
+        if not run.proposal or not run.proposal.changed.contains_added(finding.file, finding.line):
+            continue
+        level = (
+            "warning"
+            if finding.severity in {"critical", "high", "medium"}
+            else "notice"
+        )
+        annotations.append(
+            ReportAnnotation(
+                path=finding.file,
+                start_line=finding.line,
+                end_line=finding.line,
+                annotation_level=level,
+                title=finding.category[:80],
+                message=finding.message[:1_000],
+            )
+        )
+        if len(annotations) == 50:
+            break
+    return tuple(annotations)
+
+
+def _evidence_blocks(findings: list[Finding]) -> list[str]:
+    blocks: list[str] = []
+    for finding in findings:
+        evidence = finding.evidence
+        if evidence is None:
+            continue
+        command = " ".join(evidence.probe_command)
+        test = evidence.test_source[:4_000]
+        output = evidence.output_excerpt[:1_500]
+        blocks.extend(
+            [
+                "",
+                f"<details><summary>Reproduction for {sanitize_markdown_inline(finding.file)}:"
+                f"{finding.line}</summary>",
+                "",
+                f"`{sanitize_markdown_inline(command)}` exited `{evidence.exit_code}`.",
+                "",
+                "```python",
+                sanitize_markdown_block(test),
+                "```",
+                "",
+                "```text",
+                sanitize_markdown_block(output),
+                "```",
+                "",
+                "</details>",
+            ]
+        )
+    return blocks
 
 
 def _repository_parts(full_name: str | None) -> tuple[str | None, str | None]:

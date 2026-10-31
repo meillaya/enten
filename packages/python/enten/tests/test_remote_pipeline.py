@@ -432,6 +432,48 @@ async def test_public_pr_checkout_fetches_exact_sha_and_cleans_up(
     assert all("refs/pull/42/head" not in call for call in calls)
 
 
+async def test_private_checkout_uses_askpass_without_token_in_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import enten.review.public_checkout as checkout_module
+    from enten.review.remote import public_pull_request_checkout
+
+    head_sha = "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000"
+    calls: list[tuple[str, ...]] = []
+    environments: list[dict[str, str] | None] = []
+
+    async def fake_git(*arguments: str) -> str:
+        calls.append(arguments)
+        return head_sha if "rev-parse" in arguments else ""
+
+    async def fake_limited_git(
+        *arguments: str,
+        extra_env: dict[str, str] | None = None,
+    ) -> str:
+        calls.append(arguments)
+        environments.append(extra_env)
+        return ""
+
+    monkeypatch.setattr(checkout_module, "_git", fake_git)
+    monkeypatch.setattr(checkout_module, "_limited_git", fake_limited_git)
+
+    async with public_pull_request_checkout(
+        repository_full_name="private/repo",
+        pr_number=42,
+        head_sha=head_sha,
+        token="secret-token",
+    ) as checkout:
+        askpass = checkout / "askpass.sh"
+        assert askpass.is_file()
+        assert "secret-token" not in askpass.read_text(encoding="utf-8")
+
+    assert environments
+    assert environments[0] is not None
+    assert environments[0]["GITHUB_TOKEN"] == "secret-token"
+    assert environments[0]["GIT_ASKPASS"].endswith("askpass.sh")
+    assert all("secret-token" not in " ".join(call) for call in calls)
+
+
 async def test_public_checkout_fetch_runs_under_posix_file_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

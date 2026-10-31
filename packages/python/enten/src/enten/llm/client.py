@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from enten.config import LLMProvider as ConfigLLMProvider
@@ -235,14 +235,22 @@ class LLMClient:
             )
 
     async def _current_cost(self, run_id: str) -> Decimal:
-        from enten.queue.models import PRReview
+        from enten.queue.models import LLMCall, PRReview
 
         async with self._session() as session:
             result = await session.execute(
+                select(func.coalesce(func.sum(LLMCall.cost_usd), 0)).where(
+                    LLMCall.run_id == run_id
+                )
+            )
+            row = Decimal(str(result.scalar_one()))
+            if row > 0:
+                return row
+            # Compatibility for runs recorded before llm_calls.run_id existed.
+            legacy = await session.execute(
                 select(PRReview.cost_usd).where(PRReview.run_id == run_id)
             )
-            row = result.scalar_one_or_none()
-            return row or Decimal("0")
+            return Decimal(str(legacy.scalar_one_or_none() or 0))
 
     async def _record_call(
         self,
@@ -270,6 +278,7 @@ class LLMClient:
 
             call = LLMCall(
                 review_id=review.id if review is not None else None,
+                run_id=run_id,
                 model=model,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,

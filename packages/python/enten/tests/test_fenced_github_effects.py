@@ -11,7 +11,7 @@ from enten.reporting.effects import (
     IndeterminateGitHubEffectError,
 )
 from enten.reporting.payload import comment_marker
-from enten.review.run import ReportPayload
+from enten.review.run import ReportAnnotation, ReportPayload
 
 
 def _payload(head_sha: str = "a" * 40) -> ReportPayload:
@@ -35,6 +35,7 @@ class Client:
         self.calls = []
         self.markers = []
         self.comments: dict[str, Comment] = {}
+        self.outputs: list[CheckRunOutput] = []
 
     async def create_check_run(
         self,
@@ -44,8 +45,9 @@ class Client:
         conclusion: str,
         output: CheckRunOutput,
     ) -> CheckRun:
-        _ = owner, repo, sha, conclusion, output
+        _ = owner, repo, sha, conclusion
         self.calls.append("check")
+        self.outputs.append(output)
         return CheckRun(id=11, status="completed", conclusion="success")
 
     async def post_pr_comment(
@@ -252,3 +254,43 @@ async def test_fenced_effects_do_not_resume_ambiguous_receipt(
 
     assert receipt.state == "indeterminate"
     assert client.calls == []
+
+
+async def test_fenced_effects_passes_annotations_to_the_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def prepare(*args: object, **kwargs: object):
+        _ = args, kwargs
+        return {"state": EffectState.PREPARED, "external_id": None}
+
+    async def attempt(*args: object, **kwargs: object) -> bool:
+        _ = args, kwargs
+        return True
+
+    async def complete(*args: object, **kwargs: object) -> bool:
+        _ = args, kwargs
+        return True
+
+    monkeypatch.setattr("enten.reporting.effects.prepare_effect", prepare)
+    monkeypatch.setattr("enten.reporting.effects.record_effect_attempt", attempt)
+    monkeypatch.setattr("enten.reporting.effects.complete_effect", complete)
+    client = Client()
+    payload = _payload().model_copy(
+        update={
+            "annotations": (
+                ReportAnnotation(
+                    path="app.py",
+                    start_line=2,
+                    end_line=2,
+                    annotation_level="warning",
+                    title="bug",
+                    message="Subtraction is used.",
+                ),
+            )
+        }
+    )
+
+    await FencedGitHubEffects(client, run_id="run-1", generation=3).publish(payload)
+
+    assert client.outputs[0].annotations is not None
+    assert client.outputs[0].annotations[0].path == "app.py"

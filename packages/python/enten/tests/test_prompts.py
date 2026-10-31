@@ -11,7 +11,14 @@ from enten.llm.prompts import (  # pyright: ignore[reportMissingTypeStubs]
     render,
 )
 
-_INITIAL_PROMPTS = ["system_base", "review", "test_gen", "patch", "failure_attribution"]
+_INITIAL_PROMPTS = [
+    "system_base",
+    "review",
+    "test_gen",
+    "patch",
+    "failure_attribution",
+    "hypothesis",
+]
 
 
 def _dummy_values(variables: list[str]) -> dict[str, str]:
@@ -19,7 +26,7 @@ def _dummy_values(variables: list[str]) -> dict[str, str]:
 
 
 def test_all_initial_prompts_load_and_render() -> None:
-    """All five shipped prompts load and render without missing-variable errors."""
+    """All shipped prompts load and render without missing-variable errors."""
     for slug in _INITIAL_PROMPTS:
         prompt = load_prompt(slug)
         _system, _user = render(prompt, _dummy_values(prompt.variables))

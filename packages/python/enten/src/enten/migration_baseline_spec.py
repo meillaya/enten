@@ -184,6 +184,11 @@ BASELINE_INDEXES: Final[Catalog] = {
             }
         )
     },
+    5: {
+        ("public", "llm_calls"): frozenset(
+            {"llm_calls_pkey", "llm_calls_review_id_idx", "llm_calls_run_id_idx"}
+        ),
+    },
     3: {
         ("public", "jobs"): frozenset({"jobs_claimable_idx"}),
         ("public", "review_checkpoints"): frozenset({"review_checkpoints_pkey"}),

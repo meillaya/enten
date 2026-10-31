@@ -170,23 +170,22 @@ def test_job_envelope_rejects_values_outside_shared_contract(
         ReviewJobEnvelope.model_validate(invalid)
 
 
-def test_private_remote_repository_is_rejected(tmp_path: Path) -> None:
-    from pydantic import ValidationError
-
+def test_private_remote_repository_is_accepted(tmp_path: Path) -> None:
     from enten.review.run import ReviewRequest
 
-    # Given / When / Then
-    with pytest.raises(ValidationError):
-        ReviewRequest(
-            repository_id="private/repo",
-            repository_full_name="private/repo",
-            pr_number=1,
-            head_sha="abc",
-            repository_path=tmp_path,
-            public_repository=False,
-            local_repository=False,
-            verification_command=("true",),
-        )
+    request = ReviewRequest(
+        repository_id="private/repo",
+        repository_full_name="private/repo",
+        pr_number=1,
+        head_sha="a" * 40,
+        repository_path=tmp_path,
+        public_repository=False,
+        local_repository=False,
+        verification_command=("true",),
+    )
+
+    assert request.public_repository is False
+    assert request.local_repository is False
 
 
 async def test_worker_delegates_job_envelope_to_shared_stage_machine(

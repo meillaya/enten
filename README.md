@@ -1,6 +1,6 @@
 # enten
 
-enten reviews public GitHub pull requests in a Docker sandbox and reports a
+enten reviews GitHub pull requests in a Docker sandbox and reports a
 verdict derived from one command's exit code. It runs as a self-hosted GitHub
 App for a team, or as a CLI on a local checkout.
 
@@ -46,7 +46,7 @@ currently drops encoded output.
 
 A signed webhook reaches the TypeScript edge, which validates the HMAC and
 enqueues a versioned job in Postgres. The Python worker claims the job with a
-lease generation, fetches the exact head SHA from the public repository, and
+lease generation, fetches the exact head SHA from the repository, and
 starts the verifier container. The container runs with a read-only root
 filesystem and no network. All Linux capabilities are dropped. It runs as a
 non-root user and bounds CPU, memory, PID count, and time.
@@ -62,6 +62,11 @@ The worker uses the bounded local generator by default. Set
 findings: `openai-compat` for OpenAI, OpenRouter, and LM Studio, `anthropic`
 for the native Messages API, or `ollama` for local models. The verifier exit
 code still decides the verdict.
+
+Set `REVIEW_PROBES=on` to publish only findings that a generated pytest probe
+reproduces in the sandbox. `shadow` measures probes without publishing. The
+same setting applies to private repositories. The verifier image must contain
+pytest and the project dependencies.
 
 ## Deployment
 

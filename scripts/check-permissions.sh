@@ -20,7 +20,7 @@ mapfile -t permissions < <(
   ' "$MANIFEST"
 )
 
-expected=("checks:write" "metadata:read" "pull_requests:write")
+expected=("checks:write" "contents:read" "metadata:read" "pull_requests:write")
 mapfile -t actual < <(printf '%s\n' "${permissions[@]}" | sort)
 mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
 if [[ "$(printf '%s\n' "${actual[@]}")" != "$(printf '%s\n' "${wanted[@]}")" ]]; then
@@ -30,4 +30,4 @@ if [[ "$(printf '%s\n' "${actual[@]}")" != "$(printf '%s\n' "${wanted[@]}")" ]];
   exit 1
 fi
 
-printf 'Permission gate passed: checks:write, metadata:read, pull_requests:write.\n'
+printf 'Permission gate passed: checks:write, contents:read, metadata:read, pull_requests:write.\n'

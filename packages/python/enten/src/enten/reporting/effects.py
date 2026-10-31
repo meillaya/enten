@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Never, Protocol, final
 
-from enten.github.models import CheckRun, CheckRunOutput, Comment
+from enten.github.models import Annotation, CheckRun, CheckRunOutput, Comment
 from enten.queue import (
     EffectState,
     complete_effect,
@@ -141,12 +141,27 @@ class FencedGitHubEffects:
         if replay_id is not None:
             return replay_id, None
         try:
+            annotations = [
+                Annotation(
+                    path=item.path,
+                    start_line=item.start_line,
+                    end_line=item.end_line,
+                    annotation_level=item.annotation_level,
+                    title=item.title,
+                    message=item.message,
+                )
+                for item in payload.annotations
+            ]
             check = await self._client.create_check_run(
                 payload.owner,
                 payload.repo,
                 payload.head_sha,
                 payload.conclusion,
-                CheckRunOutput(title=payload.title, summary=payload.summary),
+                CheckRunOutput(
+                    title=payload.title,
+                    summary=payload.summary,
+                    annotations=annotations or None,
+                ),
             )
         except Exception as exc:
             await self._indeterminate(key, exc)

@@ -10,12 +10,14 @@ GitHub App manifests do not expand deployment environment variables.
 | Permission | Level | Reachable operation |
 |---|---:|---|
 | `metadata` | read | Installation and repository routing |
+| `contents` | read | Fetch the exact commit for public and private repositories |
 | `pull_requests` | write | Read pull request metadata and create or update the bot comment |
 | `checks` | write | Create or update a Check Run for the reviewed head SHA |
 
-The App has no `contents`, `issues`, `actions`, `workflows`, administration,
-deployment, or branch permission. The worker fetches public Git objects
-anonymously. It cannot push a branch or commit.
+The App has no `issues`, `actions`, `workflows`, administration, deployment,
+or branch permission. It can read repository contents for checkout, but it
+cannot push a branch or commit. Public checkouts stay anonymous; private
+checkouts use the short-lived installation token.
 
 Only `opened`, `reopened`, `synchronize`, and non-draft `ready_for_review`
 actions enqueue work. Adding an event, action, endpoint, or permission requires

@@ -38,6 +38,7 @@ export const PrJobEnvelopeSchema = z
           z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$(?![\s\S])/),
           255,
         ),
+        private: z.boolean().optional(),
       })
       .strict(),
     pull_request: z

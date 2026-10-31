@@ -73,6 +73,7 @@ async def run_pipeline(
     checkout_validator: CheckoutValidator | None = None,
     verification_command: tuple[str, ...] | None = None,
     expected_review_contract: str | None = None,
+    diff: str = "",
 ) -> PipelineResult:
     """Parse one job and delegate all execution to the shared stage machine."""
     checkout = (repository_path or Path(".")).resolve()
@@ -94,6 +95,7 @@ async def run_pipeline(
             correlation_run_id=run_id,
             verification_command=verification_command,
             expected_review_contract=expected_review_contract,
+            diff=diff,
         )
         validator = checkout_validator or FailClosedCheckoutValidator()
         await validator.validate(request)
@@ -206,20 +208,36 @@ async def main(poll_interval: int = 5) -> None:
                         kind=SpanKind.CONSUMER,
                     ) as span:
                         span.set_attribute("run_id", run_id)
+                        owner, repo = envelope.repository.full_name.split("/", maxsplit=1)
+                        checkout_token = (
+                            await runtime.github_client.installation_token(owner, repo)
+                            if envelope.repository.private
+                            else None
+                        )
                         async with public_pull_request_checkout(
                             repository_full_name=envelope.repository.full_name,
                             pr_number=envelope.pull_request.number,
                             head_sha=envelope.pull_request.head_sha,
+                            token=checkout_token,
                         ) as repository_path:
+                            diff = await runtime.github_client.get_pr_diff(
+                                owner,
+                                repo,
+                                envelope.pull_request.number,
+                            )
                             await run_pipeline(
                                 run_id,
                                 payload=job["payload"],
+                                diff=diff,
                                 dependencies=build_pipeline_dependencies(
                                     run_id,
                                     github_client=runtime.github_client,
                                     generation=job["generation"],
                                     verifier=runtime.remote_verifier,
                                     generator=runtime.findings_generator,
+                                    hypothesis_generator=runtime.hypothesis_generator,
+                                    probe_runner=runtime.probe_runner,
+                                    probe_publish=runtime.probe_publish,
                                 ),
                                 repository_path=repository_path,
                                 checkout_validator=runtime.checkout_validator,

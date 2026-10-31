@@ -20,7 +20,7 @@ class LLMFindingsGenerator:
         self._client = llm_client
 
     async def generate(self, proposal: Proposal) -> GeneratedFindings:
-        evidence = _repository_evidence(proposal)
+        evidence = proposal.diff or _repository_evidence(proposal)
         draft = await generate_review(
             {
                 "number": proposal.pr_number,

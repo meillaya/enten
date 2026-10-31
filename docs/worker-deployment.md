@@ -98,12 +98,12 @@ GitHub, create the App with:
 - Homepage: the repository URL.
 - Webhook URL: `https://<your-origin>/webhook`.
 - Webhook secret: the value from the command above.
-- Permissions: `metadata: read`, `pull_requests: write`, `checks: write`.
+- Permissions: `metadata: read`, `contents: read`, `pull_requests: write`, `checks: write`.
 - Subscribe to `pull_request` only.
 
 Install the App on the test repository and download its private key. The App
 must be installed on the repository that will receive the test pull request.
-The App does not need `contents`, `actions`, or administration permission.
+The App does not need `actions`, `issues`, `workflows`, or administration permission.
 
 ## 5. Configure the stack
 
@@ -119,6 +119,10 @@ DATABASE_URL=postgresql+asyncpg://enten:enten@postgres:5432/enten
 OTEL_ENDPOINT=http://jaeger:4317
 
 REVIEW_GENERATOR=llm
+REVIEW_PROBES=on
+PROBE_COMMAND=python -m pytest -q
+PROBE_MAX=3
+PROBE_TIMEOUT_SECONDS=90
 LLM_PROVIDER=openai-compat
 LLM_OPENAI_BASE_URL=https://openrouter.ai/api/v1
 LLM_OPENAI_API_KEY=<provider key>
@@ -129,9 +133,11 @@ SANDBOX_DOCKER_IMAGE=<registry>/<image>@sha256:<64 hex>
 VERIFICATION_COMMAND=pytest -q
 ```
 
-`REVIEW_GENERATOR=llm` applies to the worker. Use `openai-compat` for
-OpenRouter and LM Studio, `anthropic` for the native Messages API, or `ollama`
-for a local daemon. The edge and the worker must use the same
+`REVIEW_GENERATOR=llm` and `REVIEW_PROBES=on` apply to the worker. Use
+`openai-compat` for OpenRouter and LM Studio, `anthropic` for the native
+Messages API, or `ollama` for a local daemon. `REVIEW_PROBES=shadow` records
+probe outcomes without publishing them. The verifier image must contain pytest
+and the project dependencies. The edge and the worker must use the same
 `SANDBOX_DOCKER_IMAGE` and `VERIFICATION_COMMAND`. The enqueued job binds both values into the review
 contract, and the worker rejects a mismatch.
 

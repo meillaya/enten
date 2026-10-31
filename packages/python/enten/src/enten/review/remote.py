@@ -45,8 +45,8 @@ class FailClosedCheckoutValidator:
 
 class GitPublicCheckoutValidator:
     async def validate(self, request: ReviewRequest) -> None:
-        if request.local_repository or not request.public_repository:
-            raise UnvalidatedRemoteCheckoutError("remote review requires a public checkout")
+        if request.local_repository:
+            raise UnvalidatedRemoteCheckoutError("remote review requires a fetched checkout")
         full_name = request.repository_full_name
         if full_name is None:
             raise UnvalidatedRemoteCheckoutError("remote review is missing repository full_name")
@@ -72,7 +72,7 @@ class GitPublicCheckoutValidator:
         public_url = f"https://github.com/{full_name}.git"
         if origin.rstrip("/") not in {public_url, public_url.removesuffix(".git")}:
             raise UnvalidatedRemoteCheckoutError(
-                f"checkout origin {origin!r} is not the canonical public GitHub URL"
+                f"checkout origin {origin!r} is not the canonical GitHub URL"
             )
 
 

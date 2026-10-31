@@ -118,14 +118,16 @@ live run completed the full path.
   verifies the HMAC over that body, then validates the event schema. GitHub
   documents the same SHA-256 signature check:
   https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
-- The App manifest requests `metadata: read`, `pull_requests: write`, and
-  `checks: write`. It has no `contents` or `actions` permission. The parser test
-  compares the exact set.
-- Public checkout uses the canonical HTTPS URL, disables credential helpers,
-  fetches the exact requested head SHA, requires `HEAD == head_sha`, rejects
-  symlinks and submodules through the tree mode check, and enforces file count
-  and byte quotas before execution. Fetching the exact SHA keeps a retry valid
-  after the author pushes another commit to the PR.
+- The App manifest requests `metadata: read`, `contents: read`,
+  `pull_requests: write`, and `checks: write`. It has no `actions`, `issues`, or
+  administration permission. The parser test compares the exact set.
+- Checkout uses the canonical HTTPS URL, disables credential helpers, fetches
+  the exact requested head SHA, requires `HEAD == head_sha`, rejects symlinks
+  and submodules through the tree mode check, and enforces file count and byte
+  quotas before execution. Private checkouts use a short-lived installation
+  token through a temporary `GIT_ASKPASS` helper, so the token is not in argv
+  or logs. Fetching the exact SHA keeps a retry valid after the author pushes
+  another commit to the PR.
 - The Docker verifier uses a digest-pinned image, a read-only root filesystem,
   `network=none`, `cap_drop: ALL`, `no-new-privileges`, a non-root user, and
   CPU, memory, PID, time, and output caps. The defaults match the Docker
@@ -177,6 +179,9 @@ verdicts.
 - The public HTTPS origin served `/health` and `/ready`. `/metrics` stayed
   private.
 - Migration `0004_effect_reconciliation.sql` applied before the final matrix.
+- Migration `0005_llm_calls_run_id.sql` adds the queue run ID to LLM calls so the
+  cost cap is cumulative. It is covered by the migration and client tests; it
+  has not been applied to the test VM yet.
 
 ### Full matrix on the test image
 
@@ -206,6 +211,19 @@ The final image ran against GitHub App `5557296` on
 - Python tests, Ruff, Vitest, and the TypeScript build passed on the final
   tree.
 
+### Evidence probe spike
+
+The probe pipeline ran against twenty small Python bug cases: wrong operators,
+off-by-one bounds, boundary comparisons, mutation, swallowed exceptions,
+identity comparison, unsafe evaluation, and similar changes. The real
+OpenRouter model produced 19 hypotheses across 16 of the 20 cases. All 19
+probes were confirmed. The cost was under one tenth of a cent.
+
+This is a synthetic spike, not the planned twenty historical pull requests. It
+validates the generate-run-classify path, the prompt wrapper, the local
+executor, and the confirmation policy. It does not establish the go/no-go gate
+on real repositories.
+
 ## Residual risk
 
 - The native Anthropic Messages client is unit tested but not live tested. The
@@ -223,9 +241,13 @@ The final image ran against GitHub App `5557296` on
 - The default verifier runs `python -m compileall -q .`, which checks Python
   syntax only. Operators must set a real test command and a digest-pinned
   image for meaningful results.
-- The local generator remains the default. The LLM generator is opt-in with
-  `REVIEW_GENERATOR=llm`, and the live matrix must cover its failures as well
-  as its findings.
+- The local generator remains the default. The LLM generator and live matrix
+  are covered, but the probe stage has only synthetic evidence so far.
+- Probe findings are Python-only. The verifier remains language-agnostic, but
+  TypeScript, Go, and other languages do not get evidence-backed findings.
+- The probe stage has not been exercised against a private repository on the
+  live worker. Private checkout has unit coverage and an installation-token
+  path, but the full private end-to-end run is still pending.
 - Ten moderate dependency advisories remain in the production and development
   trees. None is high or critical. `make audit` gates production high and
   critical findings, and `make audit-dev` reports the full tree.

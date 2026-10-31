@@ -108,7 +108,7 @@ describe("POST /webhook supported pull requests", () => {
         version: "1",
         installation_id: 987654,
         delivery_id: DELIVERY_ID,
-        repository: { id: 1296269, full_name: "octocat/hello-world" },
+        repository: { id: 1296269, full_name: "octocat/hello-world", private: false },
         pull_request: {
           number: 42,
           head_sha: "a84d88e7554fc1fa21bcbc4efae3c0a85e3a0000",
@@ -202,7 +202,7 @@ describe("POST /webhook ignored events", () => {
     },
   );
 
-  it("returns 200 without enqueue for a private repository", async () => {
+  it("enqueues a private repository event", async () => {
     const queue = createQueue();
     const app = createApp({
       secret: TEST_SECRET,
@@ -217,8 +217,12 @@ describe("POST /webhook ignored events", () => {
 
     const response = await postSigned(app, payload);
 
-    expect(response.status).toBe(200);
-    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(response.status).toBe(202);
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repository: { id: 1296269, full_name: "octocat/hello-world", private: true },
+      }),
+    );
   });
 
   it("returns 200 without enqueue for every other signed event", async () => {

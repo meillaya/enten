@@ -92,6 +92,6 @@ DOCKER_GID=$(stat -c '%g' /var/run/docker.sock) docker compose config --quiet
 bash scripts/check-release-secrets.sh
 ```
 
-Run live webhook and reporting tests in a disposable public repository with a
+Run live webhook and reporting tests in a disposable public or private repository with a
 least-privilege App. Record the limits of that test. Do not present a mock run
 as a live deployment.

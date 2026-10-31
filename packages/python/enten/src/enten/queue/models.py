@@ -74,6 +74,7 @@ class LLMCall(Base):
     review_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("pr_reviews.id", ondelete="CASCADE"), nullable=True
     )
+    run_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str] = mapped_column(Text)
     tokens_in: Mapped[int] = mapped_column(default=0)
     tokens_out: Mapped[int] = mapped_column(default=0)

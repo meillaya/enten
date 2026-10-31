@@ -87,6 +87,10 @@ class GitHubClient:
             raise GitHubClientError("installation response missing 'id'")
         return installation_id
 
+    async def installation_token(self, owner: str, repo: str) -> str:
+        """Return a cached installation token for checkout or API use."""
+        return await self._get_installation_token(owner, repo)
+
     async def _get_installation_token(self, owner: str, repo: str) -> str:
         """Return a cached installation token, fetching a new one if needed."""
         installation_id = await self._find_installation_id(owner, repo)

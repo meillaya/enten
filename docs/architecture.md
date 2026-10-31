@@ -1,7 +1,7 @@
 # Architecture
 
 enten runs signed GitHub pull requests through a TypeScript edge, a Postgres
-queue, and a Python worker. The worker verifies the exact public head in a
+queue, and a Python worker. The worker verifies the exact head in a
 Docker sandbox. Orchestration and repository content sit on opposite sides of a
 trust boundary.
 
@@ -16,7 +16,7 @@ TS edge: receive → authenticate → normalize → enqueue
   ▼
 Postgres: jobs → leased claim generation → review checkpoints
   ▼
-Python worker: validate trace → exact public checkout → shared pipeline
+Python worker: validate trace → exact checkout → shared pipeline
   │                                      │
   │                                      └─ Docker sandbox: verifier exit code
   ▼
@@ -53,14 +53,17 @@ carrier with the job.
 
 ### Repository checkout
 
-The release accepts public GitHub repositories. The worker:
+The release accepts public and private GitHub repositories. The worker:
 
 1. derives `https://github.com/<owner>/<repo>.git` from the validated full name;
 2. disables interactive credentials and global Git configuration;
 3. fetches the exact `head_sha`, with no tags and depth one;
-4. checks out detached and requires `HEAD == head_sha`;
-5. revalidates the canonical origin and the detached head before execution;
-6. deletes the mode-0700 temporary checkout in a shielded cleanup block.
+4. uses a short-lived installation token through `GIT_ASKPASS` for private
+   repositories, never placing the token in argv or logs;
+5. checks out detached and requires `HEAD == head_sha`;
+6. revalidates the canonical origin and the detached head before execution;
+7. deletes the mode-0700 temporary checkout and token helper in a shielded
+   cleanup block.
 
 Private repositories, arbitrary clone URLs, symlinks, submodules, binary
 payloads, unsafe paths, and repository secrets stay outside the release
@@ -102,8 +105,9 @@ sets a lease. Every state transition and review checkpoint is compare-and-swap
 fenced by that generation and an unexpired lease. A stale worker cannot
 overwrite a replacement worker's progress.
 
-`ReviewRun` records request identity, proposal evidence, findings, verifier
-exits, verdict, cost fields, and the report receipt. The local CLI uses an
+`ReviewRun` records request identity, the bounded diff, proposal evidence,
+hypotheses, probe receipts, findings, verifier exits, verdict, cost fields, and
+the report receipt. The local CLI uses an
 atomic JSON store. Production jobs use Postgres checkpoints.
 
 ### External effects
@@ -117,8 +121,12 @@ duplicate-write safety.
 ## Pipeline and verdict
 
 ```text
-created → proposed → findings → verified → persisted → reporting → completed
+created → proposed → hypothesized → probing → findings → verified → persisted → reporting → completed
 ```
+
+The `hypothesized` and `probing` stages are used only when
+`REVIEW_PROBES` is enabled. Existing checkpoints at `findings` remain
+compatible and skip directly to verification.
 
 Queue states map those stages to `indexing`, `reviewing`, `testing`,
 `verifying`, `commenting`, and `done`. `REVIEW_GENERATOR` selects the findings
@@ -133,6 +141,8 @@ The verifier exit code is authoritative over three fresh runs:
 - `1/3` or `0/3` runs exit `0` gives `fail`;
 - an infrastructure or parser failure gives `error`.
 
+Reports include confirmed findings, the probe source and command, and a
+bounded output excerpt. Check runs carry up to 50 file and line annotations.
 Reports can describe findings. Findings cannot change the result.
 
 ## Observability

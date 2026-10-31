@@ -4,6 +4,7 @@ from pathlib import Path
 
 from enten.pipeline import (
     FindingsGenerator,
+    HypothesisGenerator,
     JsonReviewStore,
     PipelineDependencies,
     ReviewEffects,
@@ -14,11 +15,14 @@ from enten.queue import mark_state
 from enten.reporting.effects import FencedGitHubEffects, GitHubEffectClient, NoopEffects
 from enten.review.local import LocalFindingsGenerator, LocalVerifier
 from enten.review.postgres_store import PostgresReviewStore
+from enten.review.python_probes import ProbeRunner
 from enten.review.run import ReviewStage
 
 _QUEUE_STATE_BY_STAGE: dict[ReviewStage, str] = {
     "created": "indexing",
     "proposed": "reviewing",
+    "hypothesized": "testing",
+    "probing": "testing",
     "findings": "testing",
     "verified": "verifying",
     "persisted": "commenting",
@@ -58,6 +62,9 @@ def build_pipeline_dependencies(
     generation: int | None = None,
     verifier: ReviewVerifier | None = None,
     generator: FindingsGenerator | None = None,
+    hypothesis_generator: HypothesisGenerator | None = None,
+    probe_runner: ProbeRunner | None = None,
+    probe_publish: bool = True,
 ) -> PipelineDependencies:
     if effects is not None and github_client is not None:
         raise ValueError("provide either explicit effects or a production GitHub client")
@@ -83,6 +90,9 @@ def build_pipeline_dependencies(
         generator=generator or LocalFindingsGenerator(),
         verifier=verifier or LocalVerifier(),
         effects=resolved_effects or NoopEffects(),
+        hypothesis_generator=hypothesis_generator,
+        probe_runner=probe_runner,
+        probe_publish=probe_publish,
         stage_sink=QueueStageSink(run_id, generation),
     )
 

@@ -9,12 +9,13 @@ from typing import Any, Protocol
 import asyncpg
 from opentelemetry import trace
 
-from enten.config import LLMProvider, ReviewGenerator, Settings
+from enten.config import LLMProvider, ProbeMode, ReviewGenerator, Settings
 from enten.github.client import GitHubClient
 from enten.migration_operations import asyncpg_url
-from enten.pipeline import FindingsGenerator
+from enten.pipeline import FindingsGenerator, HypothesisGenerator
 from enten.queue import init_queue
 from enten.review.contract import review_contract_digest
+from enten.review.python_probes import ProbeRunner, SandboxProbeRunner, parse_probe_command
 from enten.review.remote import GitPublicCheckoutValidator, SandboxVerifier
 
 
@@ -31,6 +32,9 @@ class WorkerRuntime:
     pool: asyncpg.Pool
     github_client: GitHubClient
     findings_generator: FindingsGenerator
+    hypothesis_generator: HypothesisGenerator | None
+    probe_runner: ProbeRunner | None
+    probe_publish: bool
     remote_verifier: SandboxVerifier
     checkout_validator: GitPublicCheckoutValidator
     verification_command: tuple[str, ...]
@@ -86,6 +90,28 @@ def build_findings_generator(settings: Settings) -> FindingsGenerator:
     return LLMFindingsGenerator(LLMClient(provider, settings))
 
 
+def build_hypothesis_generator(settings: Settings) -> HypothesisGenerator:
+    """Build the Python hypothesis generator when probes are enabled."""
+    if settings.review_generator != ReviewGenerator.LLM:
+        raise WorkerConfigurationError("REVIEW_PROBES requires REVIEW_GENERATOR=llm")
+    if settings.llm_provider == LLMProvider.OPENAI_COMPAT and not settings.llm_openai_api_key:
+        raise WorkerConfigurationError(
+            "LLM_OPENAI_API_KEY is required when REVIEW_PROBES is enabled"
+        )
+    if settings.llm_provider == LLMProvider.ANTHROPIC and not settings.anthropic_api_key:
+        raise WorkerConfigurationError(
+            "ANTHROPIC_API_KEY is required when REVIEW_PROBES is enabled"
+        )
+
+    from enten.llm import LLMClient, create_llm_provider
+    from enten.review.hypothesis import LLMHypothesisGenerator
+
+    return LLMHypothesisGenerator(
+        LLMClient(create_llm_provider(settings), settings),
+        settings.probe_max,
+    )
+
+
 def parse_verification_command(settings: Settings) -> tuple[str, ...]:
     command = tuple(shlex.split(settings.verification_command))
     if not command:
@@ -106,8 +132,18 @@ async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
     try:
         from enten.sandbox.factory import get_provider
 
+        provider = get_provider(settings)
         findings_generator = build_findings_generator(settings)
-        remote_verifier = SandboxVerifier(get_provider(settings))
+        hypothesis_generator = None
+        probe_runner = None
+        if settings.review_probes != ProbeMode.OFF:
+            hypothesis_generator = build_hypothesis_generator(settings)
+            probe_runner = SandboxProbeRunner(
+                provider,
+                parse_probe_command(settings.probe_command),
+                settings.probe_timeout_seconds,
+            )
+        remote_verifier = SandboxVerifier(provider)
         pool = await asyncpg.create_pool(
             asyncpg_url(settings.database_url),
             min_size=1,
@@ -121,6 +157,9 @@ async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
         pool=pool,
         github_client=github_client,
         findings_generator=findings_generator,
+        hypothesis_generator=hypothesis_generator,
+        probe_runner=probe_runner,
+        probe_publish=settings.review_probes == ProbeMode.ON,
         remote_verifier=remote_verifier,
         checkout_validator=GitPublicCheckoutValidator(),
         verification_command=verification_command,
@@ -151,6 +190,7 @@ __all__ = [
     "WorkerRuntime",
     "bootstrap_worker",
     "build_findings_generator",
+    "build_hypothesis_generator",
     "build_production_github_client",
     "configure_worker_observability",
     "install_shutdown_handlers",

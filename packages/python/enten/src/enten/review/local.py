@@ -17,6 +17,7 @@ _SOURCE_SUFFIXES = frozenset({".py", ".pyi", ".js", ".jsx", ".ts", ".tsx"})
 _EXCLUDED_PARTS = frozenset(
     {
         ".enten",
+        ".enten-probes",
         ".git",
         ".mypy_cache",
         ".pytest_cache",

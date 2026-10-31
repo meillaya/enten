@@ -8,6 +8,7 @@ public: false
 default_events:
   - pull_request
 default_permissions:
+  contents: read
   pull_requests: write
   checks: write
   metadata: read

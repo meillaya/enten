@@ -8,11 +8,14 @@ from typing import Protocol, assert_never
 from opentelemetry import trace
 
 from enten.reporting.payload import build_report
+from enten.review.diff import DiffIndex
 from enten.review.envelope import ReviewJobEnvelope
 from enten.review.local import discover_source_files
+from enten.review.python_probes import ProbeRunner, build_findings
 from enten.review.run import (
     EffectReceipt,
     GeneratedFindings,
+    HypothesisSet,
     PipelineResult,
     Proposal,
     ReportPayload,
@@ -27,6 +30,10 @@ from enten.review.store import InMemoryReviewStore, JsonReviewStore, ReviewStore
 
 class FindingsGenerator(Protocol):
     async def generate(self, proposal: Proposal) -> GeneratedFindings: ...
+
+
+class HypothesisGenerator(Protocol):
+    async def generate(self, proposal: Proposal) -> HypothesisSet: ...
 
 
 class ReviewVerifier(Protocol):
@@ -54,6 +61,9 @@ class PipelineDependencies:
     generator: FindingsGenerator
     verifier: ReviewVerifier
     effects: ReviewEffects
+    hypothesis_generator: HypothesisGenerator | None = None
+    probe_runner: ProbeRunner | None = None
+    probe_publish: bool = True
     stage_sink: StageSink = NullStageSink()
     tracer: trace.Tracer = trace.get_tracer(__name__)
 
@@ -87,19 +97,72 @@ async def execute_review(
                         verification_command=request.verification_command,
                         pr_number=request.pr_number,
                         correlation_run_id=request.correlation_run_id,
+                        diff=request.diff,
+                        changed=DiffIndex.from_patch(request.diff),
                     )
                     run = run.model_copy(update={"stage": "proposed", "proposal": proposal})
                     await _persist(dependencies, run)
             case "proposed":
-                with dependencies.tracer.start_as_current_span("pipeline.findings"):
+                if (
+                    dependencies.hypothesis_generator is not None
+                    and dependencies.probe_runner is not None
+                ):
                     if run.proposal is None:
                         raise ValueError("proposed review is missing its proposal")
                     proposal = run.proposal.model_copy(
                         update={"repository_path": request.repository_path}
                     )
-                    findings = await dependencies.generator.generate(proposal)
+                    run = run.model_copy(update={"stage": "hypothesized", "proposal": proposal})
+                    await _persist(dependencies, run)
+                else:
+                    with dependencies.tracer.start_as_current_span("pipeline.findings"):
+                        if run.proposal is None:
+                            raise ValueError("proposed review is missing its proposal")
+                        proposal = run.proposal.model_copy(
+                            update={"repository_path": request.repository_path}
+                        )
+                        findings = await dependencies.generator.generate(proposal)
+                        run = run.model_copy(
+                            update={
+                                "stage": "findings",
+                                "proposal": proposal,
+                                "findings": findings,
+                            }
+                        )
+                        await _persist(dependencies, run)
+            case "hypothesized":
+                with dependencies.tracer.start_as_current_span("pipeline.hypothesize"):
+                    if dependencies.hypothesis_generator is None or run.proposal is None:
+                        raise ValueError(
+                            "hypothesized review has no hypothesis generator or proposal"
+                        )
+                    hypotheses = await dependencies.hypothesis_generator.generate(run.proposal)
                     run = run.model_copy(
-                        update={"stage": "findings", "proposal": proposal, "findings": findings}
+                        update={"stage": "probing", "hypotheses": hypotheses}
+                    )
+                    await _persist(dependencies, run)
+            case "probing":
+                with dependencies.tracer.start_as_current_span("pipeline.probe"):
+                    if (
+                        dependencies.probe_runner is None
+                        or run.proposal is None
+                        or run.hypotheses is None
+                    ):
+                        raise ValueError("probing review is missing its runner or hypotheses")
+                    probes = await dependencies.probe_runner.run(run.hypotheses, run.proposal)
+                    findings = build_findings(run.hypotheses, probes)
+                    if not dependencies.probe_publish:
+                        findings = findings.model_copy(
+                            update={
+                                "findings": (),
+                                "summary": (
+                                    f"{len(probes.results)} probes measured; "
+                                    "findings withheld in shadow mode"
+                                ),
+                            }
+                        )
+                    run = run.model_copy(
+                        update={"stage": "findings", "probes": probes, "findings": findings}
                     )
                     await _persist(dependencies, run)
             case "findings":

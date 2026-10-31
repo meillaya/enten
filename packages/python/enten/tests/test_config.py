@@ -14,7 +14,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from enten.config import LLMProvider, ReviewGenerator, SandboxProvider, Settings
+from enten.config import (
+    LLMProvider,
+    ProbeMode,
+    ReviewGenerator,
+    SandboxProvider,
+    Settings,
+)
 from enten.redaction import REDACT_KEYS, REDACTED, redact_dict, redact_value
 
 
@@ -33,6 +39,9 @@ def test_settings_returns_documented_defaults() -> None:
     assert s.github_app_slug == "enten-bot"
     assert s.llm_provider == LLMProvider.OPENAI_COMPAT
     assert s.review_generator == ReviewGenerator.LOCAL
+    assert s.review_probes == ProbeMode.OFF
+    assert s.probe_command == "python -m pytest -q"
+    assert s.probe_max == 3
     assert s.anthropic_api_key is None
     assert s.sandbox_provider == SandboxProvider.DOCKER
     assert s.sandbox_docker_image is None
@@ -52,6 +61,8 @@ def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
             LLM_MAX_ITERATIONS=9
             LLM_PROVIDER=ollama
             REVIEW_GENERATOR=llm
+            REVIEW_PROBES=shadow
+            PROBE_MAX=2
             GITHUB_WEBHOOK_SECRET=topsecret
             """
         ).strip()
@@ -62,6 +73,8 @@ def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
     assert s.llm_max_iterations == 9
     assert s.llm_provider == LLMProvider.OLLAMA
     assert s.review_generator == ReviewGenerator.LLM
+    assert s.review_probes == ProbeMode.SHADOW
+    assert s.probe_max == 2
     assert s.github_webhook_secret == "topsecret"
     # An unrelated field still falls back to the model default.
     assert s.per_pr_cost_cap_usd == 0.50

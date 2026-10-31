@@ -131,7 +131,6 @@ export function createWebhookHandler(options: WebhookRouteOptions) {
         const authorLogin =
           parsedEvent.data.pull_request.user.login.toLowerCase();
         if (
-          parsedEvent.data.repository.private ||
           authorLogin === botSlug ||
           authorLogin === `${botSlug}[bot]` ||
           parsedEvent.data.pull_request.draft ||
@@ -155,6 +154,7 @@ export function createWebhookHandler(options: WebhookRouteOptions) {
                 repository: {
                   id: parsedEvent.data.repository.id,
                   full_name: parsedEvent.data.repository.full_name,
+                  private: parsedEvent.data.repository.private,
                 },
                 pull_request: {
                   number: parsedEvent.data.pull_request.number,
