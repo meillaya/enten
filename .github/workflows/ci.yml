@@ -162,7 +162,7 @@ jobs:
       - name: Coverage
         run: ENTEN_COVERAGE_SCOPE=typescript bash scripts/check-coverage.sh
       - name: Dependency audit
-        run: pnpm audit --audit-level=low
+        run: make audit
       - name: Upload TypeScript coverage
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
