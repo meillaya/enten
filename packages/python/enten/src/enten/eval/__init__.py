@@ -18,8 +18,8 @@ from enten.eval.determinism import run_determinism_check
 from enten.eval.models import EvalMetrics, EvalReport
 from enten.eval.scoring import collect_cost, compute_metrics, match_findings
 from enten.llm.client import AgentLoopSpec, LLMClient
-from enten.llm.openai_compat import OpenAICompatProvider
-from enten.llm.types import LLMProvider, LLMResponse, Message, ToolSchema, ToolUse, Usage
+from enten.llm.factory import create_llm_provider
+from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse, Usage
 from enten.review.generator import (
     SUBMIT_REVIEW_SCHEMA,
     FindingSummary,
@@ -105,7 +105,7 @@ def _make_llm_client(
     if stub_llm:
         return _StubLLMClient(stub_findings or [])
     settings = Settings()
-    provider = cast(LLMProvider, cast(Any, OpenAICompatProvider(settings)))
+    provider = create_llm_provider(settings)
     return LLMClient(provider, settings)
 
 

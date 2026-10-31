@@ -10,5 +10,9 @@ PRICING: dict[str, dict[str, float]] = {
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-5.5": {"input": 2.00, "output": 10.00},
+    "anthropic/claude-sonnet-5.5": {"input": 2.00, "output": 10.00},
+    "deepseek/deepseek-v4.1-flash-1017": {"input": 0.0141, "output": 0.144},
+    "deepseek-v4.1-flash-1017": {"input": 0.0141, "output": 0.144},
     "llama3.1": {"input": 0.0, "output": 0.0},
 }

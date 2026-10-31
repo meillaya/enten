@@ -85,6 +85,8 @@ async def execute_review(
                         repository_path=request.repository_path,
                         files=discover_source_files(request.repository_path),
                         verification_command=request.verification_command,
+                        pr_number=request.pr_number,
+                        correlation_run_id=request.correlation_run_id,
                     )
                     run = run.model_copy(update={"stage": "proposed", "proposal": proposal})
                     await _persist(dependencies, run)

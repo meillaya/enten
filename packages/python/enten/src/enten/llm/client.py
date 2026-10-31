@@ -71,8 +71,10 @@ class LLMClient:
         """Return the shared token bucket for the configured LLM provider."""
         if settings.llm_provider == ConfigLLMProvider.OLLAMA:
             return _default_registry.get("ollama", capacity=10, refill_rate=5.0)
-        if "openrouter" in settings.llm_openai_base_url.lower():
+        if settings.llm_provider == ConfigLLMProvider.ANTHROPIC:
             return _default_registry.get("anthropic", capacity=60, refill_rate=1.0)
+        if "openrouter" in settings.llm_openai_base_url.lower():
+            return _default_registry.get("openrouter", capacity=60, refill_rate=1.0)
         return _default_registry.get("openai", capacity=120, refill_rate=2.0)
 
     async def complete(

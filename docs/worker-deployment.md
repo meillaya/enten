@@ -118,12 +118,21 @@ GITHUB_WEBHOOK_SECRET=<the generated secret>
 DATABASE_URL=postgresql+asyncpg://enten:enten@postgres:5432/enten
 OTEL_ENDPOINT=http://jaeger:4317
 
+REVIEW_GENERATOR=llm
+LLM_PROVIDER=openai-compat
+LLM_OPENAI_BASE_URL=https://openrouter.ai/api/v1
+LLM_OPENAI_API_KEY=<provider key>
+LLM_DEFAULT_MODEL=deepseek/deepseek-v4.1-flash-1017
+PER_PR_COST_CAP_USD=0.50
+
 SANDBOX_DOCKER_IMAGE=<registry>/<image>@sha256:<64 hex>
 VERIFICATION_COMMAND=pytest -q
 ```
 
-The edge and the worker must use the same `SANDBOX_DOCKER_IMAGE` and
-`VERIFICATION_COMMAND`. The enqueued job binds both values into the review
+`REVIEW_GENERATOR=llm` applies to the worker. Use `openai-compat` for
+OpenRouter and LM Studio, `anthropic` for the native Messages API, or `ollama`
+for a local daemon. The edge and the worker must use the same
+`SANDBOX_DOCKER_IMAGE` and `VERIFICATION_COMMAND`. The enqueued job binds both values into the review
 contract, and the worker rejects a mismatch.
 
 `VERIFICATION_COMMAND` is parsed as argv. It does not run through a shell, so

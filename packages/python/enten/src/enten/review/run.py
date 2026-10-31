@@ -63,6 +63,8 @@ class Proposal(BaseModel):
     repository_path: Path
     files: tuple[str, ...] = Field(max_length=2_000)
     verification_command: tuple[str, ...]
+    pr_number: int = 0
+    correlation_run_id: str | None = None
 
 
 class Finding(BaseModel):

@@ -9,12 +9,14 @@ retrieved code chunks, then asks an LLM to submit findings via the
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import ClassVar, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from enten.llm.client import AgentLoopSpec
+from enten.llm.client_tools import compute_cost
 from enten.llm.injection import wrap_untrusted
 from enten.llm.prompts import load_prompt, render
 from enten.llm.types import LLMResponse, Message, ToolSchema, ToolUse
@@ -40,6 +42,9 @@ class ReviewDraft(BaseModel):
     findings: list[FindingSummary]
     summary_text: str
     run_id: str
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: Decimal = Decimal("0")
 
 
 class _LLMClient(Protocol):
@@ -116,6 +121,8 @@ async def generate_review(
     retrieved_chunks: list[str],
     sandbox_path: str,
     llm_client: _LLMClient,
+    *,
+    run_id: str | None = None,
 ) -> ReviewDraft:
     """Generate a structured review draft for ``pr``.
 
@@ -167,7 +174,7 @@ async def generate_review(
         execute=_execute,
     )
 
-    run_id = f"review-{number}"
+    resolved_run_id = run_id or f"review-{number}"
     response = await llm_client.complete_with_tools(
         messages=[
             Message(role="system", content=system),
@@ -175,13 +182,17 @@ async def generate_review(
         ],
         tools=[SUBMIT_REVIEW_SCHEMA],
         agent_loop=agent_loop,
-        run_id=run_id,
+        run_id=resolved_run_id,
     )
 
+    usage = response.usage
     return ReviewDraft(
         findings=findings,
         summary_text=response.content or "",
-        run_id=run_id,
+        run_id=resolved_run_id,
+        tokens_in=usage.input_tokens,
+        tokens_out=usage.output_tokens,
+        cost_usd=compute_cost(response.model, usage.input_tokens, usage.output_tokens),
     )
 
 

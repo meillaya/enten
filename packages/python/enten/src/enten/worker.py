@@ -218,6 +218,7 @@ async def main(poll_interval: int = 5) -> None:
                                     github_client=runtime.github_client,
                                     generation=job["generation"],
                                     verifier=runtime.remote_verifier,
+                                    generator=runtime.findings_generator,
                                 ),
                                 repository_path=repository_path,
                                 checkout_validator=runtime.checkout_validator,

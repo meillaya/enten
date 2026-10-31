@@ -186,8 +186,9 @@ verdicts.
 - The default verifier runs `python -m compileall -q .`, which checks Python
   syntax only. Operators must set a real test command and a digest-pinned
   image for meaningful results.
-- The default worker makes no model calls. The OpenAI-compatible and Ollama
-  clients are library code and are not wired into the production worker.
+- The local generator remains the default. The LLM generator is opt-in with
+  `REVIEW_GENERATOR=llm`, and the live matrix must cover its failures as well
+  as its findings.
 - Ten moderate dependency advisories remain in the production and development
   trees. None is high or critical. `make audit` gates production high and
   critical findings, and `make audit-dev` reports the full tree.

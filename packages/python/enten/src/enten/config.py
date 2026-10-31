@@ -45,12 +45,21 @@ class LLMProvider(str, Enum):
     """LLM backend selection.
 
     ``openai-compat`` covers OpenAI itself plus any vendor that speaks
-    the OpenAI chat-completions wire format (Together, Anyscale,
-    OpenRouter, vLLM, etc.). ``ollama`` is the local-models case.
+    the OpenAI chat-completions wire format (Together, OpenRouter, vLLM,
+    LM Studio, etc.). ``anthropic`` uses the native Messages API.
+    ``ollama`` is the local-models case.
     """
 
     OPENAI_COMPAT = "openai-compat"
+    ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
+
+
+class ReviewGenerator(str, Enum):
+    """Findings generator selected by the production worker."""
+
+    LOCAL = "local"
+    LLM = "llm"
 
 
 class SandboxProvider(str, Enum):
@@ -98,13 +107,19 @@ class Settings(BaseSettings):
     github_webhook_secret: str | None = Field(default=None, repr=False)
     # ── LLM provider ─────────────────────────────────────────────────────
     llm_provider: LLMProvider = LLMProvider.OPENAI_COMPAT
+    # Findings generator used by the production worker.
+    review_generator: ReviewGenerator = ReviewGenerator.LOCAL
     # Default chat model name sent on every request.
     llm_default_model: str = "gpt-4o-mini"
     llm_max_iterations: int = 15
-    # OpenAI-compatible base URL; covers OpenAI, Together, vLLM, etc.
+    # OpenAI-compatible base URL; covers OpenAI, OpenRouter, vLLM, LM Studio.
     llm_openai_base_url: str = "https://api.openai.com/v1"
     # Optional API key sent as a bearer token when the selected endpoint needs one.
     llm_openai_api_key: str | None = Field(default=None, repr=False)
+    # Native Anthropic Messages API.
+    anthropic_base_url: str = "https://api.anthropic.com"
+    anthropic_api_key: str | None = Field(default=None, repr=False)
+    anthropic_version: str = "2023-06-01"
     # Ollama's local daemon; only consulted when ``llm_provider == ollama``.
     llm_ollama_base_url: str = "http://localhost:11434"
 
@@ -141,6 +156,7 @@ class Settings(BaseSettings):
 
 __all__ = [
     "LLMProvider",
+    "ReviewGenerator",
     "SandboxProvider",
     "Settings",
 ]

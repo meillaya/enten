@@ -9,9 +9,10 @@ from typing import Any, Protocol
 import asyncpg
 from opentelemetry import trace
 
-from enten.config import Settings
+from enten.config import LLMProvider, ReviewGenerator, Settings
 from enten.github.client import GitHubClient
 from enten.migration_operations import asyncpg_url
+from enten.pipeline import FindingsGenerator
 from enten.queue import init_queue
 from enten.review.contract import review_contract_digest
 from enten.review.remote import GitPublicCheckoutValidator, SandboxVerifier
@@ -29,6 +30,7 @@ class LogSink(Protocol):
 class WorkerRuntime:
     pool: asyncpg.Pool
     github_client: GitHubClient
+    findings_generator: FindingsGenerator
     remote_verifier: SandboxVerifier
     checkout_validator: GitPublicCheckoutValidator
     verification_command: tuple[str, ...]
@@ -61,6 +63,29 @@ def build_production_github_client(settings: Settings) -> GitHubClient:
     return GitHubClient(settings)
 
 
+def build_findings_generator(settings: Settings) -> FindingsGenerator:
+    """Return the configured findings generator, failing before the queue opens."""
+    if settings.review_generator == ReviewGenerator.LOCAL:
+        from enten.review.local import LocalFindingsGenerator
+
+        return LocalFindingsGenerator()
+
+    if settings.llm_provider == LLMProvider.OPENAI_COMPAT and not settings.llm_openai_api_key:
+        raise WorkerConfigurationError(
+            "LLM_OPENAI_API_KEY is required when REVIEW_GENERATOR=llm"
+        )
+    if settings.llm_provider == LLMProvider.ANTHROPIC and not settings.anthropic_api_key:
+        raise WorkerConfigurationError(
+            "ANTHROPIC_API_KEY is required when REVIEW_GENERATOR=llm"
+        )
+
+    from enten.llm import LLMClient, create_llm_provider
+    from enten.review.llm import LLMFindingsGenerator
+
+    provider = create_llm_provider(settings)
+    return LLMFindingsGenerator(LLMClient(provider, settings))
+
+
 def parse_verification_command(settings: Settings) -> tuple[str, ...]:
     command = tuple(shlex.split(settings.verification_command))
     if not command:
@@ -81,6 +106,7 @@ async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
     try:
         from enten.sandbox.factory import get_provider
 
+        findings_generator = build_findings_generator(settings)
         remote_verifier = SandboxVerifier(get_provider(settings))
         pool = await asyncpg.create_pool(
             asyncpg_url(settings.database_url),
@@ -94,6 +120,7 @@ async def bootstrap_worker(settings: Settings) -> WorkerRuntime:
     return WorkerRuntime(
         pool=pool,
         github_client=github_client,
+        findings_generator=findings_generator,
         remote_verifier=remote_verifier,
         checkout_validator=GitPublicCheckoutValidator(),
         verification_command=verification_command,
@@ -123,6 +150,7 @@ __all__ = [
     "WorkerConfigurationError",
     "WorkerRuntime",
     "bootstrap_worker",
+    "build_findings_generator",
     "build_production_github_client",
     "configure_worker_observability",
     "install_shutdown_handlers",

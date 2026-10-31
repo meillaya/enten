@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from enten.llm.anthropic import AnthropicProvider
 from enten.llm.client import AgentLoopSpec, CostCapExceeded, LLMClient, LoopDetectedError
+from enten.llm.factory import create_llm_provider
 from enten.llm.injection import (
     Finding,
     Kinds,
@@ -29,6 +31,7 @@ from enten.llm.types import (
 
 __all__ = [
     "AgentLoopSpec",
+    "AnthropicProvider",
     "ContentPart",
     "CostCapExceeded",
     "Finding",
@@ -49,6 +52,7 @@ __all__ = [
     "TokenBudgetError",
     "Usage",
     "ValidationResult",
+    "create_llm_provider",
     "validate_review_output",
     "wrap_untrusted",
 ]

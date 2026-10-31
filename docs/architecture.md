@@ -122,10 +122,10 @@ created → proposed → findings → verified → persisted → reporting → c
 ```
 
 Queue states map those stages to `indexing`, `reviewing`, `testing`,
-`verifying`, `commenting`, and `done`. The default generator emits bounded
-findings anchored in the repository. The LLM provider, prompt, cost, and eval
-components are available to explicit callers. The production worker does not
-enable them.
+`verifying`, `commenting`, and `done`. `REVIEW_GENERATOR` selects the findings
+generator. `local` emits bounded findings anchored in the repository. `llm`
+uses the configured OpenAI-compatible, Anthropic, or Ollama provider. The
+verifier exit code remains authoritative either way.
 
 The verifier exit code is authoritative over three fresh runs:
 

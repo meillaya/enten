@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from enten.config import LLMProvider, SandboxProvider, Settings
+from enten.config import LLMProvider, ReviewGenerator, SandboxProvider, Settings
 from enten.redaction import REDACT_KEYS, REDACTED, redact_dict, redact_value
 
 
@@ -32,6 +32,8 @@ def test_settings_returns_documented_defaults() -> None:
     assert s.llm_max_iterations == 15
     assert s.github_app_slug == "enten-bot"
     assert s.llm_provider == LLMProvider.OPENAI_COMPAT
+    assert s.review_generator == ReviewGenerator.LOCAL
+    assert s.anthropic_api_key is None
     assert s.sandbox_provider == SandboxProvider.DOCKER
     assert s.sandbox_docker_image is None
     assert s.verification_command == "python -m compileall -q ."
@@ -49,6 +51,7 @@ def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
             """
             LLM_MAX_ITERATIONS=9
             LLM_PROVIDER=ollama
+            REVIEW_GENERATOR=llm
             GITHUB_WEBHOOK_SECRET=topsecret
             """
         ).strip()
@@ -58,6 +61,7 @@ def test_settings_loads_custom_env_file(tmp_path: Path) -> None:
 
     assert s.llm_max_iterations == 9
     assert s.llm_provider == LLMProvider.OLLAMA
+    assert s.review_generator == ReviewGenerator.LLM
     assert s.github_webhook_secret == "topsecret"
     # An unrelated field still falls back to the model default.
     assert s.per_pr_cost_cap_usd == 0.50
@@ -67,6 +71,7 @@ def test_settings_repr_excludes_secret_values() -> None:
     settings = Settings(
         github_webhook_secret="webhook-value",
         llm_openai_api_key="llm-value",
+        anthropic_api_key="anthropic-value",
         embedding_api_key="embedding-value",
         database_url="postgresql://user:database-password@host/database",
     )
@@ -75,6 +80,7 @@ def test_settings_repr_excludes_secret_values() -> None:
 
     assert "webhook-value" not in rendered
     assert "llm-value" not in rendered
+    assert "anthropic-value" not in rendered
     assert "embedding-value" not in rendered
     assert "database-password" not in rendered
 

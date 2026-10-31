@@ -46,9 +46,11 @@ A check and one pull request comment go out through a durable effect ledger.
 The worker records an attempt before each GitHub write and stops on an
 ambiguous result, so a timeout does not become a duplicate comment.
 
-The default worker makes no model calls. The OpenAI-compatible and Ollama
-clients are library code with tests; the worker's findings come from a bounded
-local generator.
+The worker uses the bounded local generator by default. Set
+`REVIEW_GENERATOR=llm` and configure one provider to let a model propose
+findings: `openai-compat` for OpenAI, OpenRouter, and LM Studio, `anthropic`
+for the native Messages API, or `ollama` for local models. The verifier exit
+code still decides the verdict.
 
 ## Deployment
 

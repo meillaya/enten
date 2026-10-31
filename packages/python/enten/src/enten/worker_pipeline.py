@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from enten.pipeline import (
+    FindingsGenerator,
     JsonReviewStore,
     PipelineDependencies,
     ReviewEffects,
@@ -56,6 +57,7 @@ def build_pipeline_dependencies(
     store_path: Path | None = None,
     generation: int | None = None,
     verifier: ReviewVerifier | None = None,
+    generator: FindingsGenerator | None = None,
 ) -> PipelineDependencies:
     if effects is not None and github_client is not None:
         raise ValueError("provide either explicit effects or a production GitHub client")
@@ -78,7 +80,7 @@ def build_pipeline_dependencies(
             resolved_store = JsonReviewStore(path)
     return PipelineDependencies(
         store=resolved_store,
-        generator=LocalFindingsGenerator(),
+        generator=generator or LocalFindingsGenerator(),
         verifier=verifier or LocalVerifier(),
         effects=resolved_effects or NoopEffects(),
         stage_sink=QueueStageSink(run_id, generation),
