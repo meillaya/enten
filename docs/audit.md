@@ -224,6 +224,26 @@ validates the generate-run-classify path, the prompt wrapper, the local
 executor, and the confirmation policy. It does not establish the go/no-go gate
 on real repositories.
 
+### Phase 0 gate on historical bug fixes
+
+The real gate used twenty historical bug-fix commits from
+[more-itertools](https://github.com/more-itertools/more-itertools). For each
+commit, the runner created a worktree at the fixed commit, reverse-applied only
+the source change, and kept the regression tests. The model then reviewed the
+bug-introducing diff and ran its probes through the local runner.
+
+- 7 of 20 cases produced at least one confirmed finding, or 35 percent. The
+  target was 25 percent.
+- 10 hypotheses were generated; all 10 probes were confirmed. There were no
+  rejected or inconclusive probes and no trivial probes.
+- 7 cases produced no hypothesis. That is the expected low-recall behavior,
+  not a false positive.
+- All probe calls together cost under `$0.02`.
+
+This is a reversed-fix corpus, not twenty open pull requests. It establishes
+that the model can reproduce a meaningful share of real historical defects
+when the regression test is present. It does not replace a beta on live PRs.
+
 ### Live Python probe
 
 The worker ran `REVIEW_PROBES=on` against pull request
@@ -261,6 +281,9 @@ subtracted a percentage instead of computing it. The verifier image was
   are covered, but the probe stage has only synthetic evidence so far.
 - Probe findings are Python-only. The verifier remains language-agnostic, but
   TypeScript, Go, and other languages do not get evidence-backed findings.
+- The Phase 0 gate uses reversed historical fixes with their original
+  regression tests. It is closer to real code than the synthetic corpus, but it
+  is not a live design-partner trial.
 - The probe stage has not been exercised against a private repository on the
   live worker. Private checkout has unit coverage and an installation-token
   path, but the full private end-to-end run is still pending. The test App is

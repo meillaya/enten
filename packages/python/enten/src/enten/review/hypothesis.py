@@ -63,7 +63,7 @@ SUBMIT_HYPOTHESES_SCHEMA = ToolSchema(
                 },
             }
         },
-        "required": ["hypotheses"],
+        "required": [],
     },
 )
 

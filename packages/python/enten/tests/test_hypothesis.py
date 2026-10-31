@@ -118,3 +118,8 @@ async def test_hypothesis_generator_returns_empty_without_a_diff(tmp_path: Path)
     proposal = Proposal(repository_path=tmp_path, files=("app.py",), verification_command=("true",))
     result = await LLMHypothesisGenerator(FakeClient([])).generate(proposal)
     assert result.hypotheses == ()
+
+
+async def test_hypothesis_generator_allows_an_empty_submission(tmp_path: Path) -> None:
+    result = await LLMHypothesisGenerator(FakeClient([])).generate(_proposal(tmp_path))
+    assert result.hypotheses == ()
