@@ -178,7 +178,7 @@ verdicts.
   private.
 - Migration `0004_effect_reconciliation.sql` applied before the final matrix.
 
-### Full matrix on the final image
+### Full matrix on the test image
 
 The final image ran against GitHub App `5557296` on
 `meillaya/enten-test-repo`. The LLM path used OpenRouter with
@@ -215,6 +215,9 @@ The final image ran against GitHub App `5557296` on
   could not run in that account. The same gates passed locally.
 - Reconciliation is operator-initiated. The worker stops safely on an
   ambiguous effect and never adopts a receipt without an observed external ID.
+- The exact-SHA retry change was made after the live matrix. Unit tests cover
+  the fetch and validator path, but a live retry across a new push was not
+  repeated.
 - The worker cannot run on Railway. A live verification test needs a Docker
   host, and Docker socket access is root-equivalent authority.
 - The default verifier runs `python -m compileall -q .`, which checks Python
