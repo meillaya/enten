@@ -7,7 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
-DECISIONS = ROOT / "docs" / "decisions"
 LICENSE = ROOT / "LICENSE"
 
 
@@ -47,10 +46,18 @@ def test_readme_relative_links_resolve() -> None:
     assert not broken, f"Broken README links: {broken}"
 
 
-def test_at_least_ten_adrs() -> None:
-    assert DECISIONS.is_dir(), f"{DECISIONS} is not a directory"
-    adrs = [p for p in DECISIONS.iterdir() if p.is_file() and p.suffix == ".md"]
-    assert len(adrs) >= 10, f"Expected >=10 ADRs, found {len(adrs)}"
+def test_docs_relative_links_resolve() -> None:
+    """Every relative link under docs points at a path in this checkout."""
+    broken: list[str] = []
+    for path in (ROOT / "docs").rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        for target in re.findall(r"\]\(([^)]+)\)", text):
+            if target.startswith(("http://", "https://", "#", "mailto:")):
+                continue
+            linked = (path.parent / target.split("#", 1)[0]).resolve()
+            if not linked.exists():
+                broken.append(f"{path.relative_to(ROOT)} -> {target}")
+    assert not broken, f"Broken docs links: {broken}"
 
 
 def test_license_exists() -> None:

@@ -1,7 +1,11 @@
 # Deploy and test the worker
 
-This guide brings up the verified worker on a Linux host with Docker. It ends
-with a live pull request that produces one Check Run and one comment.
+This guide deploys the verified worker on a Linux host with Docker and proves
+the full release path with a live pull request. The worker needs a Docker
+daemon, the GitHub App private key, and a Postgres database.
+
+The test is complete when one pull request produces one Check Run, one bot
+comment, one `done` job, a complete trace, and two `succeeded` effect rows.
 
 ## Prerequisites
 
@@ -9,15 +13,20 @@ with a live pull request that produces one Check Run and one comment.
 - 4 GiB RAM, 2 CPUs, and 20 GiB free disk for images, builds, and sandboxes.
 - A public HTTPS origin that routes `/webhook` to port 3000. Caddy or nginx on
   the host works, and GitHub must be able to reach it.
-- A GitHub App created from `packages/ts/app/github-app.yml`, installed on a
-  disposable public test repository. Download the PEM private key.
-- An immutable verifier image digest and an argv command that runs the test
-  suite. The image must already contain the test dependencies because the
-  verifier container has no network.
+- A GitHub App installed on a disposable public test repository, with its PEM
+  private key available on the host.
+- An immutable verifier image and an argv command that runs the test suite. The
+  image must already contain the test dependencies because the verifier
+  container has no network.
 
 ## 1. Prepare the host
 
+Install Docker Engine and the Compose plugin from the Docker repository for
+your distribution. Add the deployment user to the `docker` group or run the
+commands with sudo. Then create the secret directory and clone the repository:
+
 ```bash
+sudo install -d -m 0750 /etc/enten
 git clone https://github.com/Meillaya/enten.git
 cd enten
 cp .env.example .env
@@ -27,19 +36,76 @@ Put the GitHub App PEM at `/etc/enten/github-app.pem` and make it readable by
 uid 1000. The worker mounts that path read-only and refuses to start when the
 file is missing.
 
-## 2. Create the GitHub App
+## 2. Build the verifier image
 
-In GitHub, create an App with the manifest as the reference:
+The verifier image is the test environment. It must run the repository's real
+suite without network access, so install every dependency at build time. A
+minimal Python image looks like this:
 
-- Homepage: your repository URL.
+```dockerfile
+FROM python:3.12-slim@sha256:<python-digest>
+RUN pip install --no-cache-dir pytest
+```
+
+Build and push it, then record the registry digest:
+
+```bash
+docker build -t registry.example.com/enten-verifier:1 .
+docker push registry.example.com/enten-verifier:1
+docker image inspect registry.example.com/enten-verifier:1 \
+  --format '{{index .RepoDigests 0}}'
+```
+
+Set `SANDBOX_DOCKER_IMAGE` to that `name@sha256:<64 hex>` reference. A local
+image ID in `sha256:<64 hex>` form also works when the worker host already has
+the image, but a registry digest survives host rebuilds.
+
+The verifier command runs as uid 1000 inside the image. The image must expose
+the test runner on `PATH` and must not depend on network access. If the suite
+needs a database, a browser, or a compiler, install those pieces in the image
+before the test.
+
+## 3. Expose the webhook over HTTPS
+
+GitHub requires HTTPS. Put a reverse proxy in front of port 3000 and keep the
+application port off the public interface. A Caddy configuration on the host:
+
+```caddyfile
+enten.example.com {
+  reverse_proxy 127.0.0.1:3000
+}
+```
+
+Caddy obtains and renews the certificate. Open ports 80 and 443 in the host
+firewall. The endpoint returns 502 until the stack starts in step 6, so confirm
+the certificate is issued before you create the App:
+
+```bash
+curl -sI https://enten.example.com/health
+```
+
+## 4. Create the GitHub App
+
+Generate the webhook secret first:
+
+```bash
+openssl rand -hex 32
+```
+
+Use `packages/ts/app/github-app.yml` as the reference for the App fields. In
+GitHub, create the App with:
+
+- Homepage: the repository URL.
 - Webhook URL: `https://<your-origin>/webhook`.
-- Webhook secret: the same value as `GITHUB_WEBHOOK_SECRET`.
+- Webhook secret: the value from the command above.
 - Permissions: `metadata: read`, `pull_requests: write`, `checks: write`.
 - Subscribe to `pull_request` only.
 
-Install the App on the test repository and download its private key.
+Install the App on the test repository and download its private key. The App
+must be installed on the repository that will receive the test pull request.
+The App does not need `contents`, `actions`, or administration permission.
 
-## 3. Configure the stack
+## 5. Configure the stack
 
 Edit `.env`:
 
@@ -47,7 +113,7 @@ Edit `.env`:
 GITHUB_APP_ID=<numeric app id>
 GITHUB_APP_SLUG=<app slug>
 GITHUB_APP_PRIVATE_KEY_PATH=/etc/enten/github-app.pem
-GITHUB_WEBHOOK_SECRET=<openssl rand -hex 32>
+GITHUB_WEBHOOK_SECRET=<the generated secret>
 
 DATABASE_URL=postgresql+asyncpg://enten:enten@postgres:5432/enten
 OTEL_ENDPOINT=http://jaeger:4317
@@ -64,7 +130,7 @@ contract, and the worker rejects a mismatch.
 pipes, redirection, and `&&` do not work. Put those steps in a script inside the
 verifier image and call the script.
 
-## 4. Start the stack
+## 6. Start the stack
 
 ```bash
 DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
@@ -76,7 +142,7 @@ scripts/healthcheck-all.sh
 worker. It fails before starting when the Docker socket, App ID, webhook
 secret, or PEM file is missing.
 
-## 5. Verify the services
+## 7. Verify the services
 
 ```bash
 curl --fail http://127.0.0.1:3000/health
@@ -84,16 +150,18 @@ curl --fail http://127.0.0.1:3000/ready
 curl --fail http://127.0.0.1:3000/metrics
 ```
 
-Jaeger runs at `http://127.0.0.1:16686`.
+Jaeger runs at `http://127.0.0.1:16686`. The worker log must show one claim and
+one completion for each job. The edge log must show one persisted job for each
+delivery.
 
-## 6. Prove the live path
+## 8. Prove the live path
 
 Open a non-draft pull request in the test repository. The App must receive one
 `pull_request` delivery. Confirm:
 
 - one job reaches state `done`;
 - one Check Run has the verifier conclusion;
-- one bot comment carries the head-SHA marker;
+- one bot comment carries the marker derived from the head SHA;
 - the trace has `POST /webhook`, `jobs enqueue`, worker consume, and pipeline
   spans;
 - `external_effects` has a `succeeded` row for the check and the comment.
@@ -108,6 +176,20 @@ docker compose exec -T postgres psql -U enten -d enten -c \
 
 This is the full release path: authenticated ingress, durable queue, exact
 checkout, Docker verification, deterministic verdict, and GitHub reporting.
+
+If the job stays queued, check the worker log for a Docker or PEM error. If the
+job reaches `done` and GitHub has no check, query `external_effects` for an
+`indeterminate` row and follow the runbook.
+
+## 9. Clean up the test
+
+```bash
+scripts/dev-down.sh
+```
+
+This preserves the Postgres volume. Use `--drop-data` only for a disposable
+host. Suspend the App installation and revoke the private key when the test is
+over. Remove the DNS record and the host if you no longer need them.
 
 ## Keep the web tier on Railway
 
@@ -150,7 +232,7 @@ verifier contract.
 
 4. Point the GitHub webhook at the Railway domain. Set the same
    `SANDBOX_DOCKER_IMAGE` and `VERIFICATION_COMMAND` on the Railway edge.
-5. Repeat the pull request check from step 6.
+5. Repeat the pull request check from step 8.
 
 This mixed topology is not covered by `scripts/dev-up.sh` or the release test
 matrix. The SSH tunnel is a single point of failure, and the worker host needs

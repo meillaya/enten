@@ -154,10 +154,3 @@ authority, so the verified topology uses a dedicated self-hosted worker. The
 Railway IaC file runs the web tier and migrations. Railway has no Docker
 socket, so the verifier cannot run there. `fly.toml` remains a process topology
 template with no live deployment.
-
-## Related decisions
-
-See [`docs/decisions/`](decisions/) for the language split, Postgres queue,
-pgvector, cost model, determinism boundary, permissions, prompt-injection
-controls, checksum migrations, authenticated ingress and tracing, sandbox
-backend, and fenced effects.

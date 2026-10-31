@@ -83,7 +83,6 @@ production dependency audit.
 - [Operations runbook](docs/runbook.md)
 - [GitHub App permissions](docs/permissions.md)
 - [Verifier demo contracts](docs/demo-repo.md)
-- [Decision records](docs/decisions/)
 - [Audit and fixes](docs/audit.md)
 
 ## License
