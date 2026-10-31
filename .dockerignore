@@ -24,6 +24,7 @@ coverage/
 .omc/
 .omo/
 .omx/
+.railway/
 
 # Editor / OS
 .idea/

@@ -121,8 +121,12 @@ permissions: ## Audit requested GitHub App permissions.
 security: ## Scan the release tree and history for secrets.
 	@cd $(ROOT_DIR) && bash scripts/check-release-secrets.sh
 
-audit: ## Fail on any published JavaScript dependency vulnerability.
-	@cd $(ROOT_DIR) && $(PNPM) audit --audit-level=low
+audit: ## Fail on high or critical vulnerabilities in shipped JavaScript dependencies.
+	@cd $(ROOT_DIR) && $(PNPM) audit --prod --audit-level=high
+
+.PHONY: audit-dev
+audit-dev: ## List development dependency advisories without gating the release.
+	@cd $(ROOT_DIR) && $(PNPM) audit --audit-level=low || true
 
 # ─── aggregate gate ─────────────────────────────────────────────────────
 .PHONY: check

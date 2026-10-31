@@ -1,14 +1,25 @@
 # Verifier demonstration contracts
 
-The release has two deliberately separate demonstrations: an offline HTTPie image contract and a credentialed GitHub smoke test with the generic immutable Python verifier. They do not share a verifier image.
+The release has two separate demonstrations: an offline HTTPie image contract
+and a credentialed GitHub smoke test with the generic immutable Python
+verifier. They use different verifier images.
 
 ## Offline HTTPie image contract
 
-`docker/verifier-httpie/` is pinned to the public `httpie/cli` commit `2105caa49bae87c5809c274e407619a0de2639d1`, Git tree `5be8d10a92efc928460e86f1ce6dcabbea1a728a`, and `tests/test_parser_schema.py` selector. The image also validates the normalized source digest transported by the worker.
+`docker/verifier-httpie/` is pinned to the public `httpie/cli` commit
+`2105caa49bae87c5809c274e407619a0de2639d1`, Git tree
+`5be8d10a92efc928460e86f1ce6dcabbea1a728a`, and the
+`tests/test_parser_schema.py` selector. The image also validates the normalized
+source digest that the worker transports.
 
-The fixture proves the image and three-run verifier contract. It does not publish an image, create or verify a fork, install a GitHub App, or post to live GitHub. Any fork commit changes the trusted source identity and is rejected by design.
+The fixture proves the image and the three-run verifier contract. Publishing an
+image, creating or verifying a fork, installing a GitHub App, and posting to
+live GitHub sit outside it. A fork commit changes the trusted source identity,
+so the image rejects it.
 
-The opt-in integration test builds a unique local tag, runs nine candidate checks (three complete three-run verifier cycles), verifies metadata and negative contract mutations, and removes the tag and containers:
+The opt-in integration test builds a unique local tag. It runs nine candidate
+checks (three complete three-run verifier cycles), verifies metadata and
+negative contract mutations, then removes the tag and containers:
 
 ```bash
 ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 \
@@ -16,13 +27,17 @@ ENTEN_RUN_DEMO_IMAGE_INTEGRATION=1 \
   uv run --project packages/python/enten pytest tests/test_demo_image.py -q
 ```
 
-The trusted checkout must match the recorded commit and tree exactly. The runtime container is networkless and read-only.
+The trusted checkout must match the recorded commit and tree. The runtime
+container has no network and a read-only root filesystem.
 
 ## Credentialed GitHub smoke test
 
-Use a disposable public Python repository that you control. A fork of `Meillaya/enten` is suitable when the account running the demo does not already own that repository. Never install a test App on an upstream repository you do not control.
+Use a disposable public Python repository that you control. A fork of
+`Meillaya/enten` works when the demo account does not own the upstream
+repository. Install the test App only on a repository you control.
 
-1. Copy `.env.example` to `.env` and configure the GitHub App ID, webhook secret, and PEM path.
+1. Copy `.env.example` to `.env` and set the GitHub App ID, webhook secret, and
+   PEM path.
 2. Keep the generic immutable verifier configuration:
 
    ```dotenv
@@ -30,13 +45,24 @@ Use a disposable public Python repository that you control. A fork of `Meillaya/
    VERIFICATION_COMMAND=python -m compileall -q .
    ```
 
-3. Configure the externally reachable webhook origin, start `scripts/dev-up.sh`, install the App only on the public test repository, and open a non-draft pull request.
-4. Confirm one job, one causal trace, one Check Run, and one bot-marker PR comment for the exact PR head SHA.
+3. Configure the externally reachable webhook origin, start
+   `scripts/dev-up.sh`, install the App on the public test repository, and open
+   a non-draft pull request.
+4. Confirm one job, one causal trace, one Check Run, and one bot-marker pull
+   request comment for the exact head SHA.
 
-The generic verifier checks Python syntax only. It exercises the credentialed fetch, sandbox, and reporting path without claiming project-test coverage. Do not substitute the HTTPie image: its offline source contract cannot verify a fork or arbitrary PR head.
+The generic verifier checks Python syntax only. It exercises the credentialed
+fetch, sandbox, and reporting path. It does not measure the repository's test
+suite. The HTTPie image cannot verify a fork or an arbitrary pull request head,
+so keep it out of this test.
 
-Live GitHub behavior is credential-dependent and is not claimed by the repository-only release gate.
+Live GitHub behavior depends on credentials. The repository-only release gate
+does not claim it.
 
 ## Fixture corpus
 
-`tests/fixtures/prs/` contains independent `expected_findings.json` and `stub_findings.json` inputs for bugs, missing tests, security issues, prompt injection, and clean changes. Expected labels are scoring data only. Missing stub predictions, zero determinism tests, or malformed aggregate metrics fail the eval.
+`tests/fixtures/prs/` contains independent `expected_findings.json` and
+`stub_findings.json` inputs for bugs, missing tests, security issues, prompt
+injection, and clean changes. Expected labels are scoring data only. Missing
+stub predictions, zero determinism tests, and malformed aggregate metrics fail
+the eval.

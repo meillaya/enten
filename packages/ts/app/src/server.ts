@@ -9,7 +9,11 @@ import {
   createJobsQueue,
   type JobEnqueuer,
 } from "./queue/jobs.js";
-import { healthHandler } from "./routes/health.js";
+import {
+  healthHandler,
+  readyHandler,
+  type ReadinessCheck,
+} from "./routes/health.js";
 import { metricsHandler } from "./routes/metrics.js";
 import { createWebhookHandler } from "./routes/webhook.js";
 import { initOtel, type OtelLifecycle } from "./otel.js";
@@ -26,6 +30,7 @@ export interface CreateAppOptions {
   readonly tracing?: RequestTracing;
   readonly maxWebhookBytes?: number;
   readonly reviewContract?: string;
+  readonly readyCheck?: ReadinessCheck;
   readonly verifySignature?: (
     body: string,
     signature: string,
@@ -34,6 +39,7 @@ export interface CreateAppOptions {
 
 export type CreatedApp = {
   readonly app: Hono;
+  readonly metricsApp: Hono;
   readonly sql: postgres.Sql;
   readonly queue: JobEnqueuer;
 };
@@ -65,9 +71,15 @@ export function createApp(options: CreateAppOptions): CreatedApp {
     });
   const queue = options.queue ?? createJobsQueue({ sql });
   const tracing = options.tracing ?? createRequestTracing();
+  const readyCheck =
+    options.readyCheck ??
+    (async (): Promise<boolean> => {
+      await sql`SELECT 1`;
+      return true;
+    });
 
   app.get("/health", healthHandler);
-  app.get("/metrics", metricsHandler);
+  app.get("/ready", readyHandler(readyCheck));
   app.post(
     "/webhook",
     createWebhookHandler({
@@ -83,7 +95,13 @@ export function createApp(options: CreateAppOptions): CreatedApp {
     }),
   );
 
-  return { app, sql, queue };
+  // The metrics listener is a separate app so the public webhook port never
+  // serves the Prometheus scrape surface.
+  const metricsApp = new Hono();
+  metricsApp.get("/health", healthHandler);
+  metricsApp.get("/metrics", metricsHandler);
+
+  return { app, metricsApp, sql, queue };
 }
 
 export function loadConfig(
@@ -109,6 +127,15 @@ export type StartOptions = {
   readonly initTelemetry?: (endpoint: string) => OtelLifecycle;
 };
 
+export type LoggedError = { readonly error: Error | string };
+
+export function toLoggedError(error: unknown): LoggedError {
+  if (error instanceof Error) {
+    return { error };
+  }
+  return { error: String(error) };
+}
+
 function closeServer(server: ServerType): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((error) => {
@@ -116,8 +143,7 @@ function closeServer(server: ServerType): Promise<void> {
         resolve();
         return;
       }
-      reject(error);
-    });
+      reject(error);    });
   });
 }
 
@@ -136,19 +162,24 @@ export async function start(options: StartOptions = {}): Promise<Runtime> {
   const listen = options.serve ?? serve;
   const webhookPort = Number(config.PORT);
   const metricsPort = Number(config.METRICS_PORT);
+
+  // An operator who collapses both ports onto one listener explicitly opts
+  // into exposing the scrape route beside the webhook route.
+  if (metricsPort === webhookPort) {
+    created.app.route("/", created.metricsApp);
+  }
+
   const servers = [listen({ fetch: created.app.fetch, port: webhookPort })];
   if (metricsPort !== webhookPort) {
-    servers.push(listen({ fetch: created.app.fetch, port: metricsPort }));
+    servers.push(
+      listen({ fetch: created.metricsApp.fetch, port: metricsPort }),
+    );
   }
 
   let shutdownPromise: Promise<void> | undefined;
   const onSignal = (): void => {
     shutdown().catch((error: unknown) => {
-      if (error instanceof Error) {
-        logger.error({ error }, "graceful shutdown failed");
-        return;
-      }
-      logger.error({ error: String(error) }, "graceful shutdown failed");
+      logger.error(toLoggedError(error), "graceful shutdown failed");
     });
   };
 
@@ -179,11 +210,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     await start();
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      logger.error({ error }, "server startup failed");
-    } else {
-      logger.error({ error: String(error) }, "server startup failed");
-    }
+    logger.error(toLoggedError(error), "server startup failed");
     process.exitCode = 1;
   }
 }

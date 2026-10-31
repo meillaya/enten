@@ -8,3 +8,10 @@ allowBuilds:
   esbuild: true
   protobufjs: true
   msw: true
+
+# Transitive packages with published advisories. Keep these pinned until the
+# parent dependency ranges include the patched release.
+overrides:
+  "@grpc/grpc-js": "^1.14.5"
+  "brace-expansion@>=2.0.0 <2.1.7": "2.1.7"
+  systeminformation: "^5.33.16"

@@ -76,6 +76,32 @@ def test_dockerfile_runs_as_non_root(built_image: dict[str, Any]) -> None:
     assert user == "1000:1000", f"expected USER 1000:1000, got {user!r}"
 
 
+def test_runtime_resolves_production_dependencies(
+    built_image: dict[str, Any],
+    image_tag: str,
+) -> None:
+    """The runtime image can import a workspace production dependency."""
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--entrypoint",
+            "node",
+            image_tag,
+            "--input-type=module",
+            "-e",
+            "await import('@hono/node-server')",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"runtime dependency resolution failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+
+
 def test_dockerfile_has_healthcheck(built_image: dict[str, Any]) -> None:
     healthcheck = built_image["Config"].get("Healthcheck")
     assert healthcheck is not None, "HEALTHCHECK is not defined"

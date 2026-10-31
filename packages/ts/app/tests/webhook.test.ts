@@ -542,4 +542,43 @@ describe("POST /webhook rejected input", () => {
     expect(response.status).toBe(503);
     expect(queue.enqueue).toHaveBeenCalledTimes(1);
   });
+
+  it("rethrows a verifier rejection that is not an Error", async () => {
+    // Given
+    const queue = createQueue();
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+      verifySignature: () => Promise.reject("verification unavailable"),
+    }).app;
+
+    // When
+    const request = postSigned(app, JSON.stringify(prOpenedFixture));
+
+    // Then
+    await expect(request).rejects.toBe("verification unavailable");
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rethrows a persistence rejection that is not an Error", async () => {
+    // Given
+    const queue = {
+      enqueue: vi.fn(() => Promise.reject("database unavailable")),
+    };
+    const app = createApp({
+      secret: TEST_SECRET,
+      databaseUrl: "postgresql://unused",
+      queue,
+      tracing: createTracing(),
+    }).app;
+
+    // When
+    const request = postSigned(app, JSON.stringify(prOpenedFixture));
+
+    // Then
+    await expect(request).rejects.toBe("database unavailable");
+    expect(queue.enqueue).toHaveBeenCalledTimes(1);
+  });
 });

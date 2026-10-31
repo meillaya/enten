@@ -21,7 +21,7 @@ COPY packages/ts ./packages/ts
 RUN export CI=true \
     && pnpm install --frozen-lockfile \
     && pnpm --filter './packages/ts/*' build \
-    && pnpm prune --prod
+    && pnpm --filter @enten/app deploy --prod --legacy /app/deploy
 
 FROM python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b AS runtime
 
@@ -36,8 +36,10 @@ WORKDIR /app
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder --chown=enten:enten /app/.venv ./.venv
-COPY --from=builder --chown=enten:enten /app/packages/ts/app/dist ./packages/ts/app/dist
-COPY --from=builder --chown=enten:enten /app/packages/ts/app/node_modules ./packages/ts/app/node_modules
+# The deploy directory is a self-contained package: dist, package.json, and the
+# production dependency tree. Copying only the package-local node_modules
+# leaves pnpm symlinks pointing at a workspace store that is not in the image.
+COPY --from=builder --chown=enten:enten /app/deploy ./packages/ts/app
 COPY --chown=enten:enten packages/python ./packages/python
 COPY --chown=enten:enten migrations ./migrations
 COPY --chown=enten:enten prompts ./prompts

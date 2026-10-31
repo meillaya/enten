@@ -145,8 +145,8 @@ export function newRunId(): string {
     const bitOffset = i * 5;
     const hexStart = Math.floor(bitOffset / 4);
     const nibbleOffset = bitOffset % 4;
-    const lo = parseInt(digest[hexStart] ?? "0", 16);
-    const hi = parseInt(digest[hexStart + 1] ?? "0", 16);
+    const lo = parseInt(digest.charAt(hexStart), 16);
+    const hi = parseInt(digest.charAt(hexStart + 1), 16);
     // 5 bits straddling two hex digits: shift `lo` up by `nibbleOffset`
     // and pull the remaining bits from `hi`.
     const loBits = (lo << nibbleOffset) & 0x1f;

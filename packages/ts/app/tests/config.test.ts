@@ -92,6 +92,17 @@ describe("config.parse", () => {
     }
   });
 
+  it("returns a bare message for an issue without a field path", () => {
+    // A non-object environment makes Zod report the issue at the root.
+    const result = parse(null as unknown as Record<string, string | undefined>);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.startsWith(": ")).toBe(false);
+      expect(result.error.length).toBeGreaterThan(0);
+    }
+  });
+
   it("reports the failing field path in the error", () => {
     const result = parse({ GITHUB_APP_ID: "1" });
     expect(result.ok).toBe(false);

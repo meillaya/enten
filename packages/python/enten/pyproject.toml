@@ -2,7 +2,7 @@
 name = "enten"
 version = "0.1.0"
 description = "enten - AI engineering agent (Python core)"
-readme = "../../../README.md"
+readme = { text = "Python worker and CLI for enten, a deterministic pull-request review service. See https://github.com/Meillaya/enten.", content-type = "text/markdown" }
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [

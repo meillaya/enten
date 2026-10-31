@@ -11,6 +11,9 @@ export const SUPPORTED_PULL_REQUEST_ACTIONS = [
   "ready_for_review",
 ] as const;
 
+const DELIVERY_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const TraceparentSchema = z
   .string()
   .regex(
@@ -27,7 +30,7 @@ export const PrJobEnvelopeSchema = z
   .object({
     version: z.literal("1"),
     installation_id: z.number().int().positive(),
-    delivery_id: z.string().uuid(),
+    delivery_id: z.string().regex(DELIVERY_ID_PATTERN),
     repository: z
       .object({
         id: z.number().int().positive(),

@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _docker_available() -> bool:
+    """Return whether the compose checks can reach a Docker daemon."""
+    return shutil.which("docker") is not None and Path("/var/run/docker.sock").exists()
+
+
+requires_docker = pytest.mark.skipif(
+    not _docker_available(),
+    reason="docker CLI and /var/run/docker.sock are required for compose checks",
+)
 
 
 def _compose_config() -> dict[str, object]:
@@ -36,6 +49,7 @@ def test_image_has_one_foreground_web_process() -> None:
     assert 'CMD ["sh", "-c"' not in dockerfile
 
 
+@requires_docker
 def test_compose_separates_migration_web_and_worker_roles() -> None:
     config = _compose_config()
     services = config.get("services")
@@ -58,6 +72,7 @@ def test_compose_separates_migration_web_and_worker_roles() -> None:
     assert worker.get("command") == ["enten", "worker"]
 
 
+@requires_docker
 def test_compose_waits_for_database_and_migration_readiness() -> None:
     config = _compose_config()
     services = config["services"]
@@ -71,6 +86,7 @@ def test_compose_waits_for_database_and_migration_readiness() -> None:
         assert dependencies["migrate"]["condition"] == "service_completed_successfully"
 
 
+@requires_docker
 def test_worker_has_only_required_host_capabilities() -> None:
     config = _compose_config()
     services = config["services"]
@@ -114,19 +130,20 @@ def test_dev_scripts_start_full_stack_and_preserve_data_by_default() -> None:
     assert 'VOLUME_FLAG=""' in down_script
 
 
-def test_platform_configs_keep_web_worker_and_migration_separate() -> None:
+def test_platform_configs_keep_web_and_migration_separate() -> None:
     fly = tomllib.loads((ROOT / "fly.toml").read_text(encoding="utf-8"))
-    railway_web = tomllib.loads((ROOT / "railway.toml").read_text(encoding="utf-8"))
-    railway_worker = tomllib.loads((ROOT / "railway.worker.toml").read_text(encoding="utf-8"))
+    iac = (ROOT / ".railway" / "railway.ts").read_text(encoding="utf-8")
     assert fly["processes"] == {
         "web": "node packages/ts/app/dist/server.js",
         "worker": "enten worker",
     }
     migration = "python -m enten.migrations apply --baseline-existing"
     assert fly["deploy"]["release_command"] == migration
-    assert railway_web["deploy"]["preDeployCommand"] == migration
-    assert railway_web["deploy"]["startCommand"] == "node packages/ts/app/dist/server.js"
-    assert railway_worker["deploy"]["startCommand"] == "enten worker"
+    assert 'start: "node packages/ts/app/dist/server.js"' in iac
+    assert 'healthcheck: "/ready"' in iac
+    assert f'preDeploy: "{migration}"' in iac
+    assert 'postgres("Postgres")' in iac
+    assert 'service("enten-web"' in iac
 
 
 def test_github_manifest_uses_a_replaceable_absolute_webhook_url() -> None:
